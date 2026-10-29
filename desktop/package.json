@@ -1,0 +1,45 @@
+{
+  "name": "qg-desktop-companion",
+  "version": "0.4.3",
+  "private": true,
+  "description": "DumbFuckCockpit — widget spatial transparent pour le bureau Windows.",
+  "author": "CEOMELYXJA",
+  "main": "src/main.cjs",
+  "postinstall": "electron-builder install-app-deps",
+  "scripts": {
+    "start": "electron .",
+    "icons": "node scripts/generate-icons.cjs",
+    "package": "node scripts/prepare-widget.cjs && npm run icons && electron-builder --publish never --win nsis"
+  },
+  "dependencies": {
+    "desktop-host": "file:./native"
+  },
+  "devDependencies": {
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "ca.ceomelyxja.qgdesktop",
+    "productName": "DumbFuckCockpit Widget",
+    "artifactName": "DumbFuckCockpit-Widget-${version}-${arch}.${ext}",
+    "directories": { "output": "dist" },
+    "files": ["src/**/*", "assets/**/*", "package.json"],
+    "extraResources": [{ "from": "widget", "to": "widget", "filter": ["**/*"] }],
+    "asar": true,
+    "asarUnpack": ["**/*.node"],
+    "electronLanguages": ["en-US", "fr"],
+    "win": { "icon": "assets/qg.ico", "target": ["nsis", "zip"], "requestedExecutionLevel": "asInvoker" },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": false,
+      "runAfterFinish": true,
+      "shortcutName": "DumbFuckCockpit Widget",
+      "installerIcon": "assets/qg.ico",
+      "uninstallerIcon": "assets/qg.ico"
+    }
+  }
+}
+
