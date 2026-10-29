@@ -11,15 +11,15 @@
   const makeId = () => window.crypto?.randomUUID ? crypto.randomUUID() : `ct-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
   const now = () => Date.now();
   const DEFAULT_SUBJECTS = [
-    { id: "work", name: "Travail", description: "Projets, clients et tâches professionnelles.", color: "#9bb7ac", size: 1, durationMinutes: 35 },
-    { id: "home", name: "Maison", description: "Entretien, organisation et vie quotidienne.", color: "#b89e79", size: 1, durationMinutes: 25 },
-    { id: "care", name: "Bien-être", description: "Repos, santé et soins personnels.", color: "#9eafc1", size: 1, durationMinutes: 20 },
-    { id: "create", name: "Création", description: "Idées, fabrication et expression visuelle.", color: "#c08f8b", size: 1, durationMinutes: 40 },
-    { id: "admin", name: "Administration", description: "Messages, formulaires et démarches.", color: "#b7aa83", size: 1, durationMinutes: 20 },
-    { id: "personal", name: "Personnel", description: "Le reste de votre vie, à votre façon.", color: "#aa9bb7", size: 1, durationMinutes: 25 }
+    { id: "work", name: "Travail", description: "Projets, clients et tâches professionnelles.", color: "#b18b5e", size: 1, durationMinutes: 35 },
+    { id: "home", name: "Maison", description: "Entretien, organisation et vie quotidienne.", color: "#98856c", size: 1, durationMinutes: 25 },
+    { id: "care", name: "Bien-être", description: "Repos, santé et soins personnels.", color: "#858b91", size: 1, durationMinutes: 20 },
+    { id: "create", name: "Création", description: "Idées, fabrication et expression visuelle.", color: "#9a6f64", size: 1, durationMinutes: 40 },
+    { id: "admin", name: "Administration", description: "Messages, formulaires et démarches.", color: "#a49b81", size: 1, durationMinutes: 20 },
+    { id: "personal", name: "Personnel", description: "Le reste de votre vie, à votre façon.", color: "#887968", size: 1, durationMinutes: 25 }
   ];
   const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, showOrbits: true, center: { x: 0.5, y: 0.53 } };
-  const DEFAULT_STATE = { version: 1, view: "orbit", taskFilter: "open", subjects: DEFAULT_SUBJECTS.map((item) => ({ ...item })), tasks: [], visual: structuredClone(DEFAULT_VISUAL), lastSync: 0 };
+  const DEFAULT_STATE = { version: 1, view: "tasks", taskFilter: "open", subjects: DEFAULT_SUBJECTS.map((item) => ({ ...item })), tasks: [], visual: structuredClone(DEFAULT_VISUAL), lastSync: 0 };
 
   function cleanSubject(value) {
     const input = value && typeof value === "object" ? value : {};
@@ -27,7 +27,7 @@
       id: /^[a-zA-Z0-9_-]{1,60}$/.test(String(input.id || "")) ? String(input.id) : makeId(),
       name: String(input.name || "Sujet sans nom").trim().slice(0, 48) || "Sujet sans nom",
       description: String(input.description || "").trim().slice(0, 260),
-      color: /^#[0-9a-fA-F]{6}$/.test(input.color) ? input.color : "#9bb7ac",
+      color: /^#[0-9a-fA-F]{6}$/.test(input.color) ? input.color : "#b18b5e",
       size: clamp(input.size ?? 1, 0.55, 1.65),
       durationMinutes: clamp(input.durationMinutes ?? 25, 5, 1440)
     };
@@ -35,7 +35,11 @@
 
   function cleanTask(value, subjects) {
     const input = value && typeof value === "object" ? value : {};
-    const validSubject = subjects.some((subject) => subject.id === input.subjectId) ? input.subjectId : null;
+    const legacySubject = subjects.find((subject) => subject.id === input.subjectId) || null;
+    const defaultSubject = legacySubject && DEFAULT_SUBJECTS.find((subject) => subject.id === legacySubject.id);
+    const oldDefaultColors = { work: "#9bb7ac", home: "#b89e79", care: "#9eafc1", create: "#c08f8b", admin: "#b7aa83", personal: "#aa9bb7" };
+    const migratedColor = legacySubject && defaultSubject && legacySubject.color.toLowerCase() === oldDefaultColors[legacySubject.id] ? defaultSubject.color : legacySubject?.color;
+    const validSubject = legacySubject ? legacySubject.id : null;
     const status = ["queued", "active", "done", "archived"].includes(input.status) ? input.status : "queued";
     const number = (item) => Number.isFinite(Number(item)) ? Number(item) : null;
     return {
@@ -43,6 +47,9 @@
       title: String(input.title || "").trim().slice(0, 180),
       description: String(input.description || input.doneWhen || "").trim().slice(0, 700),
       subjectId: validSubject,
+      topicName: String(input.topicName || input.categoryName || legacySubject?.name || "").trim().slice(0, 48),
+      planetColor: /^#[0-9a-fA-F]{6}$/.test(input.planetColor || input.color) ? (input.planetColor || input.color) : migratedColor || "#b18b5e",
+      planetSize: clamp(input.planetSize ?? legacySubject?.size ?? 1, 0.55, 1.65),
       status,
       durationMinutes: clamp(input.durationMinutes ?? input.minutes ?? 25, 5, 1440),
       priority: [1, 2, 3].includes(Number(input.priority)) ? Number(input.priority) : 2,
@@ -74,7 +81,7 @@
       const seen = new Set();
       const uniqueSubjects = subjects.filter((subject) => { if (seen.has(subject.id)) subject.id = makeId(); seen.add(subject.id); return true; });
       const tasks = raw.tasks.slice(0, 500).map((task) => cleanTask(task, uniqueSubjects)).filter((task) => task.title);
-      return { ...structuredClone(DEFAULT_STATE), view: ["orbit", "tasks", "subjects", "appearance"].includes(raw.view) ? raw.view : "orbit", taskFilter: ["open", "elapsed", "done", "all"].includes(raw.taskFilter) ? raw.taskFilter : "open", subjects: uniqueSubjects, tasks, visual: cleanVisual(raw.visual), lastSync: Number(raw.lastSync) || 0 };
+      return { ...structuredClone(DEFAULT_STATE), view: "tasks", taskFilter: ["open", "elapsed", "done", "all"].includes(raw.taskFilter) ? raw.taskFilter : "open", subjects: uniqueSubjects, tasks, visual: cleanVisual(raw.visual), lastSync: Number(raw.lastSync) || 0 };
     } catch (_) { return structuredClone(DEFAULT_STATE); }
   }
 
@@ -148,38 +155,11 @@
 
   function render() {
     if (DESKTOP_WIDGET) return;
-    document.querySelectorAll("[data-view]").forEach((button) => button.classList.toggle("is-active", button.dataset.view === data.view));
-    const headings = {
-      orbit: ["VUE D’ENSEMBLE", "En orbite", "La carte montre uniquement les rappels que vous avez démarrés."],
-      tasks: ["SUIVI CLAIR", "Vos rappels", "Définissez quoi faire, le contexte et la durée du rappel. Rien n’est classé sans vous."],
-      subjects: ["COULEURS ET SENS", "Vos sujets", "Chaque sujet possède une couleur, une description et une durée proposée."],
-      appearance: ["PRÉFÉRENCES VISUELLES", "Apparence", "Ajustez la carte; vos choix sont sauvegardés automatiquement dans ce navigateur."]
-    };
-    const heading = headings[data.view] || headings.orbit;
-    byId("panelKicker").textContent = heading[0];
-    byId("panelTitle").textContent = heading[1];
-    byId("panelContent").innerHTML = viewContent();
+    document.querySelectorAll("[data-view]").forEach((button) => button.classList.toggle("is-active", button.dataset.view === "tasks"));
+    byId("panelKicker").textContent = "VOTRE CARTE PERSONNELLE";
+    byId("panelTitle").textContent = "Mes planètes";
+    byId("panelContent").innerHTML = renderTasksView();
     updateHeader();
-  }
-
-  function viewContent() {
-    if (data.view === "tasks") return renderTasksView();
-    if (data.view === "subjects") return renderSubjectsView();
-    if (data.view === "appearance") return renderAppearanceView();
-    return renderOrbitView();
-  }
-
-  function renderOrbitView() {
-    const open = sortedOpenTasks();
-    const active = open.filter((task) => task.status === "active");
-    const elapsed = active.filter((task) => taskPhase(task) === "elapsed");
-    const queued = open.filter((task) => task.status === "queued");
-    const visibleCount = Math.min(data.visual.planetCount, active.filter((task) => taskPhase(task) === "running").length);
-    const summary = `<div class="summary-grid"><div class="summary-tile"><b>${active.length}</b><span>rappel${active.length === 1 ? "" : "s"} démarré${active.length === 1 ? "" : "s"}</span></div><div class="summary-tile"><b>${elapsed.length}</b><span>rappel${elapsed.length === 1 ? "" : "s"} écoulé${elapsed.length === 1 ? "" : "s"}</span></div></div>`;
-    const runningHtml = active.filter((task) => taskPhase(task) === "running").slice(0, 4).map(taskCard).join("");
-    const elapsedHtml = elapsed.slice(0, 3).map(taskCard).join("");
-    const legend = `<div class="subject-legend">${data.subjects.filter((subject) => subject.name).slice(0, 12).map((subject) => `<div class="legend-row"><span class="legend-swatch" style="color:${subject.color};background:${subject.color}"></span><span class="legend-name">${escapeHtml(subject.name)}</span><span class="legend-description">${escapeHtml(subject.description || "Couleur de vos rappels")}</span></div>`).join("")}</div>`;
-    return `<p class="section-intro">Les sujets et les couleurs restent sous votre contrôle. Les rappels écoulés restent ouverts; ils ne sont jamais marqués terminés automatiquement.</p>${summary}<section class="panel-section"><h3 class="section-title">En mouvement <small>${visibleCount} visible${visibleCount === 1 ? "" : "s"} dans la carte</small></h3>${runningHtml || `<div class="empty-card"><b>Aucun rappel en orbite</b>Démarrez un rappel dans la section « Vos rappels » pour lui donner une planète.</div>`}</section>${elapsedHtml ? `<section class="panel-section"><h3 class="section-title">Temps écoulé <small>toujours à traiter</small></h3>${elapsedHtml}</section>` : ""}<section class="panel-section"><h3 class="section-title">Prochains à démarrer <small>${queued.length}</small></h3>${queued.slice(0, 3).map(taskCard).join("") || `<p class="subtle">Votre file est vide.</p>`}</section><section class="panel-section"><h3 class="section-title">Légende des sujets</h3>${legend}</section><button class="primary-button full-button" data-action="new-task">＋ Créer un rappel précis</button><p class="sync-note">Après vos changements, choisissez <b>Synchroniser le widget</b> en haut. L’application de bureau lit automatiquement la copie locale dans Téléchargements.</p>`;
   }
 
   function renderTasksView() {
@@ -191,20 +171,19 @@
       if (filter === "done") return task.status === "done";
       return true;
     }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    const options = `<option value="">À classer</option>${data.subjects.map((subject) => `<option value="${escapeHtml(subject.id)}">${escapeHtml(subject.name)}</option>`).join("")}`;
-    return `<p class="section-intro">Une tâche contient une action concrète, son contexte et un temps de rappel. Vous pourrez modifier chaque détail plus tard.</p><section class="panel-section"><h3 class="section-title">Nouveau rappel</h3><form id="taskForm" class="form-grid"><label class="field wide">Action à faire<input name="title" maxlength="180" required placeholder="Ex. Confirmer la date avec la cliente"></label><label class="field wide">Détail ou résultat attendu<textarea name="description" maxlength="700" placeholder="Une précision utile, une première étape ou le résultat à obtenir"></textarea></label><label class="field">Sujet<select name="subjectId">${options}</select></label><label class="field">Durée du rappel<select name="durationMinutes"><option value="10">10 minutes</option><option value="20">20 minutes</option><option value="25" selected>25 minutes</option><option value="35">35 minutes</option><option value="50">50 minutes</option><option value="90">1 h 30</option><option value="custom">Autre durée…</option></select></label><label class="field wide" id="customDurationField" hidden>Durée en minutes<input name="customDuration" type="number" min="5" max="1440" value="30"></label><label class="field wide"><span class="inline-row"><input name="startNow" type="checkbox" checked><span>Démarrer le rappel tout de suite et le faire apparaître dans la carte</span></span></label><button class="primary-button wide" type="submit">＋ Ajouter ce rappel</button></form><label class="file-label">Importer un fichier .txt, .md ou .json sans tout retaper<input id="importFromLabel" type="button" data-action="import-file" value=""></label></section><section class="panel-section"><h3 class="section-title">Votre liste <small>${data.tasks.length} au total</small></h3><div class="task-filter">${[["open","À traiter"],["elapsed","Écoulés"],["done","Terminés"],["all","Tout"]].map(([id,label]) => `<button class="filter-button ${filter === id ? "is-active" : ""}" data-action="filter" data-filter="${id}">${label}</button>`).join("")}</div>${filtered.map(taskCard).join("") || `<div class="empty-card"><b>Rien ici pour le moment</b>Ajoutez un rappel ou importez votre liste texte. Les éléments inconnus resteront « À classer », jamais assignés au hasard.</div>`}</section>`;
+    return `<p class="section-intro">Chaque rappel est sa propre planète. Son sujet, sa couleur, sa taille et son temps se règlent ensemble, sur sa fiche.</p><section class="panel-section new-planet-section"><h3 class="section-title">Ajouter une planète</h3><form id="taskForm" class="form-grid"><label class="field wide">Action ou tâche<input name="title" maxlength="180" required placeholder="Ex. Confirmer la date avec la cliente"></label><label class="field wide">Détail utile<textarea name="description" maxlength="700" placeholder="Première étape, contexte ou résultat attendu"></textarea></label><label class="field">Sujet (facultatif)<input name="topicName" maxlength="48" placeholder="Ex. Boutique, santé, maison"></label><label class="field">Temps accordé en minutes<input name="durationMinutes" type="number" min="5" max="1440" value="25" required></label><label class="field planet-color-field">Couleur<input name="planetColor" type="color" value="#b18b5e"></label><label class="field planet-size-field">Taille <span class="field-value" data-new-size-output>100%</span><input name="planetSize" type="range" min="0.55" max="1.65" step="0.05" value="1"></label><label class="field wide"><span class="inline-row"><input name="startNow" type="checkbox" checked><span>La démarrer maintenant et la faire tourner sur la carte</span></span></label><button class="primary-button wide" type="submit">＋ Ajouter à ma carte</button></form><button class="file-label import-button" type="button" data-action="import-file">Importer un fichier .txt, .md ou .json</button></section><section class="panel-section planet-list-section"><div class="list-heading"><h3 class="section-title">Ma liste <small>${data.tasks.length} planète${data.tasks.length === 1 ? "" : "s"}</small></h3><label class="filter-select-label">Afficher<select data-task-filter><option value="open" ${filter === "open" ? "selected" : ""}>À traiter</option><option value="elapsed" ${filter === "elapsed" ? "selected" : ""}>Temps écoulé</option><option value="done" ${filter === "done" ? "selected" : ""}>Terminées</option><option value="all" ${filter === "all" ? "selected" : ""}>Toutes</option></select></label></div>${filtered.map(taskCard).join("") || `<div class="empty-card"><b>Aucune planète dans cette vue</b>Ajoutez une tâche ici ou importez votre liste. Les catégories importées deviennent des sujets modifiables sur chaque planète.</div>`}</section><details class="settings-disclosure"><summary>Réglages de la carte</summary><div class="settings-body">${renderAppearanceView()}</div></details><p class="sync-note">Après vos changements, cliquez sur <b>Synchroniser le widget</b> en haut. Votre copie locale est enregistrée dans Téléchargements.</p>`;
   }
 
   function taskCard(task) {
-    const subject = subjectById(task.subjectId);
+    const legacy = subjectById(task.subjectId);
     const phase = taskPhase(task);
     const elapsed = phase === "elapsed";
     const done = phase === "done" || phase === "archived";
-    const note = elapsed ? `Le rappel de ${formatRemaining(task.durationMinutes * 60_000)} s’est écoulé à ${formatClock(taskDeadline(task))}. La tâche reste ouverte.` : task.description;
+    const color = task.planetColor || legacy?.color || "#b18b5e";
+    const note = elapsed ? `Le délai s’est écoulé à ${formatClock(taskDeadline(task))}. La tâche reste ouverte.` : task.description;
     const action = task.status === "queued" ? `<button class="small-button primary" data-action="start-task" data-id="${escapeHtml(task.id)}">Démarrer</button>` : elapsed ? `<button class="small-button primary" data-action="restart-task" data-id="${escapeHtml(task.id)}">Reprendre ${task.durationMinutes} min</button>` : task.status === "active" ? `<button class="small-button" data-action="complete-task" data-id="${escapeHtml(task.id)}">Terminer</button>` : `<button class="small-button" data-action="restore-task" data-id="${escapeHtml(task.id)}">Rouvrir</button>`;
-    return `<article class="task-card ${elapsed ? "is-elapsed" : ""} ${done ? "is-done" : ""}"><div class="task-title-row"><span class="task-dot" style="color:${subject?.color || "#9aa19b"};background:${subject?.color || "#9aa19b"}"></span><span class="task-title">${escapeHtml(task.title)}</span><span class="task-timer">${escapeHtml(timeLabel(task))}</span></div><div class="task-meta"><span>${escapeHtml(subject?.name || "À classer")}</span><span>${escapeHtml(formatRemaining(task.durationMinutes * 60_000))} allouées</span>${task.startedAt ? `<span>Démarré ${formatClock(task.startedAt)}</span>` : ""}</div>${note ? `<p class="task-description">${escapeHtml(note)}</p>` : ""}${elapsed && task.reason ? `<p class="task-description"><b>Votre note :</b> ${escapeHtml(task.reason)}</p>` : ""}<div class="task-actions">${action}<button class="small-button" data-action="edit-task" data-id="${escapeHtml(task.id)}">Détails</button><button class="icon-action" data-action="archive-task" data-id="${escapeHtml(task.id)}" aria-label="Archiver ${escapeHtml(task.title)}" title="Archiver">↧</button></div></article>`;
+    return `<article class="planet-card ${elapsed ? "is-elapsed" : ""} ${done ? "is-done" : ""}" data-planet-card="${escapeHtml(task.id)}"><div class="planet-card-head"><span class="planet-swatch" style="--planet-color:${color}"></span><div class="planet-card-name"><h4>${escapeHtml(task.title)}</h4><span>${escapeHtml(task.topicName || legacy?.name || "Sans sujet")}</span></div><span class="planet-timer">${escapeHtml(timeLabel(task))}</span></div><div class="planet-card-meta"><span>${task.durationMinutes} min prévues</span>${task.startedAt ? `<span>Démarrée ${formatClock(task.startedAt)}</span>` : ""}</div>${note ? `<p class="planet-note">${escapeHtml(note)}</p>` : ""}${elapsed ? `<label class="field planet-reason-field">Qu’est-ce qui bloque ou reste à faire ?<textarea data-task-field="reason" data-id="${escapeHtml(task.id)}" maxlength="300" placeholder="Une note pour reprendre plus facilement">${escapeHtml(task.reason)}</textarea></label>` : task.reason ? `<p class="planet-note"><b>Note :</b> ${escapeHtml(task.reason)}</p>` : ""}<div class="planet-actions">${action}<button class="small-button archive-button" data-action="archive-task" data-id="${escapeHtml(task.id)}">Archiver</button></div><details class="planet-editor"><summary>Modifier cette planète</summary><div class="form-grid planet-editor-fields"><label class="field wide">Action ou tâche<input data-task-field="title" data-id="${escapeHtml(task.id)}" maxlength="180" value="${escapeHtml(task.title)}"></label><label class="field">Sujet (facultatif)<input data-task-field="topicName" data-id="${escapeHtml(task.id)}" maxlength="48" value="${escapeHtml(task.topicName || legacy?.name || "")}" placeholder="Ex. Boutique, santé, maison"></label><label class="field">Temps accordé en minutes<input data-task-field="durationMinutes" data-id="${escapeHtml(task.id)}" type="number" min="5" max="1440" value="${task.durationMinutes}"></label><label class="field planet-color-field">Couleur<input data-task-field="planetColor" data-id="${escapeHtml(task.id)}" type="color" value="${color}"></label><label class="field planet-size-field">Taille<input data-task-field="planetSize" data-id="${escapeHtml(task.id)}" type="range" min="0.55" max="1.65" step="0.05" value="${task.planetSize || legacy?.size || 1}"></label><label class="field wide">Détail ou résultat attendu<textarea data-task-field="description" data-id="${escapeHtml(task.id)}" maxlength="700">${escapeHtml(task.description)}</textarea></label><label class="field wide">Note pour reprendre plus tard<textarea data-task-field="reason" data-id="${escapeHtml(task.id)}" maxlength="300">${escapeHtml(task.reason)}</textarea></label></div></details></article>`;
   }
-
   function renderSubjectsView() {
     const cards = data.subjects.map((subject) => {
       const assigned = data.tasks.filter((task) => task.subjectId === subject.id).length;
@@ -215,9 +194,8 @@
 
   function renderAppearanceView() {
     const v = data.visual;
-    return `<p class="section-intro">Réglez la quantité, la taille et la vitesse du mouvement. Ces choix restent enregistrés après fermeture; la synchronisation les transmet au widget de bureau.</p><section class="panel-section"><h3 class="section-title">Planètes et orbites</h3><label class="view-row"><span>Planètes visibles<small>Maximum de rappels qui tournent en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille des planètes<small>Le réglage propre à chaque sujet s’ajoute à cette échelle.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>La vitesse choisie reste la même quand le widget est en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>Tracés orbitaux<small>Des lignes fines pour suivre l’approche du centre.</small></span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Mini étoiles blanches<small>Quelques points discrets; sans poussière colorée.</small></span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Très peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discret</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Un peu plus</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Dense</option></select></label></section><section class="panel-section"><h3 class="section-title">Position du centre</h3><p class="subtle">Maintenez le clic droit sur la planète centrale et faites-la glisser. Toute la carte la suit en douceur. Le widget Windows ne capte pas les clics en dehors de cette planète.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section"><h3 class="section-title">Synchronisation locale</h3><p class="subtle">Le fichier de mise à jour est placé dans Téléchargements. Le widget installé surveille ce dossier et applique vos rappels et réglages automatiquement. Le contenu n’est pas envoyé sur GitHub.</p><button class="primary-button full-button" data-action="sync-widget">Synchroniser le widget</button></section>`;
+    return `<section class="panel-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Nombre de rappels qui tournent en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>S’ajoute à la taille définie sur chaque planète.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Elle reste la même quand le widget passe en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>Tracés orbitaux<small>Lignes fines inspirées des cartes stellaires anciennes.</small></span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Mini étoiles blanches<small>Petits points discrets sur le fond noir.</small></span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Très peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discret</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Un peu plus</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Dense</option></select></label></section><section class="panel-section"><h3 class="section-title">Placement du centre</h3><p class="subtle">Maintenez le clic droit sur la planète centrale et faites-la glisser. Toute la carte la suit en douceur. Le widget Windows ne capte pas les clics en dehors de cette planète.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section>`;
   }
-
   function updateHeader() {
     const active = data.tasks.filter((task) => task.status === "active");
     const running = active.filter((task) => taskPhase(task) === "running").length;
@@ -232,8 +210,8 @@
   }
 
   function setView(view) {
-    if (!["orbit", "tasks", "subjects", "appearance"].includes(view)) return;
-    data.view = view; save(); render();
+    if (view !== "tasks") return;
+    data.view = "tasks"; save(); render();
     document.querySelector(".main-nav")?.classList.remove("is-open");
   }
 
@@ -301,14 +279,13 @@
     const queued = open.filter((task) => task.status === "queued");
     const completed = data.tasks.filter((task) => task.status === "done").slice(0, 6);
     const group = (title, tasks, emptyText = "") => `<h3 class="modal-group-title">${title}</h3>${tasks.length ? tasks.map((task) => {
-      const subject = subjectById(task.subjectId);
       const deadline = taskDeadline(task);
       let statusText;
       if (taskPhase(task) === "running") statusText = `Échéance du rappel : ${formatClock(deadline)} · ${timeLabel(task)}`;
       else if (taskPhase(task) === "elapsed") statusText = `Temps écoulé à ${formatClock(deadline)} · tâche toujours ouverte`;
       else if (task.status === "done") statusText = task.completedAt ? `Terminée à ${formatClock(task.completedAt)}` : "Terminée";
       else statusText = "En attente de démarrage";
-      return `<article class="modal-task"><strong><span style="color:${subject?.color || "#9aa19b"}">●</span> ${escapeHtml(task.title)}</strong><small>${escapeHtml(subject?.name || "À classer")}</small><small>${escapeHtml(statusText)}</small><p>${escapeHtml(task.description || "Aucun détail ajouté.")}${task.reason ? `<br><b>Note :</b> ${escapeHtml(task.reason)}` : ""}</p></article>`;
+      return `<article class="modal-task"><strong><span style="color:${task.planetColor || "#b18b5e"}">●</span> ${escapeHtml(task.title)}</strong><small>${escapeHtml(task.topicName || "Sans sujet")}</small><small>${escapeHtml(statusText)}</small><p>${escapeHtml(task.description || "Aucun détail ajouté.")}${task.reason ? `<br><b>Note :</b> ${escapeHtml(task.reason)}` : ""}</p></article>`;
     }).join("") : `<p class="modal-empty">${emptyText}</p>`}`;
     dialog.innerHTML = `<header class="dialog-head"><div><p class="eyebrow">LE CENTRE DE VOTRE CARTE</p><h2>État des rappels</h2><p>Un délai écoulé ne termine jamais la tâche à votre place.</p></div><button class="dialog-close" type="button" data-action="close-focus" aria-label="Fermer">×</button></header><div class="dialog-body">${group("En orbite", running, "Aucun rappel actif.")}${elapsed.length ? group("Temps écoulé — toujours à traiter", elapsed) : ""}${queued.length ? group("En attente", queued) : ""}${completed.length ? group("Terminées récemment", completed) : ""}</div>`;
     dialog.showModal();
@@ -316,7 +293,7 @@
 
   function addSubject() {
     if (data.subjects.length >= 24) return showToast("Vous pouvez définir jusqu’à 24 sujets.");
-    const subject = cleanSubject({ id: makeId(), name: "Nouveau sujet", description: "", color: "#9bb7ac", durationMinutes: 25 });
+    const subject = cleanSubject({ id: makeId(), name: "Nouveau sujet", description: "", color: "#b18b5e", durationMinutes: 25 });
     data.subjects.push(subject); save(); render();
     const input = document.querySelector(`[data-subject-field="name"][data-id="${CSS.escape(subject.id)}"]`);
     input?.focus(); input?.select();
@@ -369,54 +346,69 @@
     const input = event.target;
     if (input.matches("[data-visual]")) {
       const key = input.dataset.visual;
-      data.visual[key] = input.type === "checkbox" ? input.checked : key === "stars" || key === "planetCount" ? Number(input.value) : Number(input.value);
+      data.visual[key] = input.type === "checkbox" ? input.checked : Number(input.value);
       if (key === "stars") createStars();
       const output = document.querySelector(`[data-output="${key}"]`);
       if (output) output.textContent = key === "planetScale" ? `${Math.round(data.visual[key] * 100)}%` : key === "speed" ? `${data.visual[key].toFixed(2)}×` : String(data.visual[key]);
       save();
+      return;
     }
-    if (input.matches("[data-subject-field]")) {
-      const subject = subjectById(input.dataset.id); if (!subject) return;
-      const key = input.dataset.subjectField;
-      subject[key] = key === "size" || key === "durationMinutes" ? Number(input.value) : input.value;
-      subject.size = clamp(subject.size, 0.55, 1.65); subject.durationMinutes = clamp(subject.durationMinutes, 5, 1440);
+    if (input.matches("[data-task-field]")) {
+      const task = data.tasks.find((item) => item.id === input.dataset.id);
+      if (!task) return;
+      const key = input.dataset.taskField;
+      if (key === "durationMinutes") task[key] = clamp(input.value, 5, 1440);
+      else if (key === "planetSize") task[key] = clamp(input.value, 0.55, 1.65);
+      else task[key] = input.value;
+      const card = input.closest("[data-planet-card]");
+      if (key === "planetColor") card?.querySelector(".planet-swatch")?.style.setProperty("--planet-color", task.planetColor);
+      if (key === "planetSize") {
+        const output = input.closest(".field")?.querySelector(".field-value");
+        if (output) output.textContent = `${Math.round(task.planetSize * 100)}%`;
+      }
+      if (input.name === "planetSize") {
+        const output = input.closest(".field")?.querySelector(".field-value");
+        if (output) output.textContent = `${Math.round(Number(input.value) * 100)}%`;
+      }
       save();
+      return;
     }
-    if (input.name === "durationMinutes") byId("customDurationField").hidden = input.value !== "custom";
+    if (input.name === "planetSize") {
+      const output = input.closest(".field")?.querySelector("[data-new-size-output]");
+      if (output) output.textContent = `${Math.round(Number(input.value) * 100)}%`;
+    }
   }
 
   function handleChange(event) {
     const input = event.target;
-    if (input.matches("[data-visual]")) { data.visual = cleanVisual(data.visual); save(); render(); return; }
-    if (input.matches("[data-subject-field]")) { render(); return; }
-    if (input.name === "subjectId") {
-      const subject = subjectById(input.value);
-      const duration = byId("panelContent").querySelector('[name="durationMinutes"]');
-      const custom = byId("panelContent").querySelector('[name="customDuration"]');
-      if (subject && duration) {
-        const matchingOption = Array.from(duration.options).find((option) => Number(option.value) === subject.durationMinutes);
-        if (matchingOption) duration.value = matchingOption.value;
-        else { duration.value = "custom"; if (custom) custom.value = String(Math.round(subject.durationMinutes)); }
-        byId("customDurationField").hidden = duration.value !== "custom";
-      }
+    if (input.matches("[data-visual]")) { data.visual = cleanVisual(data.visual); save(); return; }
+    if (input.matches("[data-task-filter]")) { data.taskFilter = input.value; save(); render(); return; }
+    if (input.matches("[data-task-field]")) {
+      const task = data.tasks.find((item) => item.id === input.dataset.id);
+      if (!task) return;
+      const card = input.closest("[data-planet-card]");
+      if (input.dataset.taskField === "title") { const title = card?.querySelector(".planet-card-name h4"); if (title) title.textContent = task.title || "Planète sans nom"; }
+      if (input.dataset.taskField === "topicName") { const topic = card?.querySelector(".planet-card-name span"); if (topic) topic.textContent = task.topicName || "Sans sujet"; }
+      save();
     }
   }
 
   function handleSubmit(event) {
     if (event.target.id !== "taskForm") return;
     event.preventDefault();
-    const form = event.target, formData = new FormData(form);
-    const subject = subjectById(String(formData.get("subjectId") || ""));
-    let duration = String(formData.get("durationMinutes") || "25");
-    if (duration === "custom") duration = String(formData.get("customDuration") || "30");
-    const task = cleanTask({ id: makeId(), title: formData.get("title"), description: formData.get("description"), subjectId: subject?.id || null, durationMinutes: duration, priority: 2, status: formData.get("startNow") ? "active" : "queued", startedAt: formData.get("startNow") ? now() : null, createdAt: now() }, data.subjects);
+    const formData = new FormData(event.target);
+    const task = cleanTask({
+      id: makeId(), title: formData.get("title"), description: formData.get("description"),
+      topicName: formData.get("topicName"), planetColor: formData.get("planetColor"), planetSize: formData.get("planetSize"),
+      durationMinutes: formData.get("durationMinutes"), priority: 2,
+      status: formData.get("startNow") ? "active" : "queued", startedAt: formData.get("startNow") ? now() : null, createdAt: now()
+    }, data.subjects);
     if (!task.title) return;
-    data.tasks.unshift(task); save(); render(); showToast("Rappel ajouté sans classement automatique.");
+    data.tasks.unshift(task); save(); render(); showToast("Planète ajoutée à votre carte.");
   }
-
   function createImportDialog() {
     importDialog = document.createElement("dialog"); importDialog.id = "importDialog";
-    importDialog.innerHTML = `<header class="dialog-head"><div><p class="eyebrow">IMPORTATION AVANT AJOUT</p><h2>Aperçu de votre fichier</h2><p>Les lignes incertaines restent « À classer »; les tâches existantes ne sont pas remplacées.</p></div><button class="dialog-close" type="button" data-action="close-import" aria-label="Fermer">×</button></header><div class="dialog-body"><p id="importSummary" class="subtle"></p><div class="import-preview"><ul id="importRows"></ul></div><div class="empty-actions"><button class="primary-button" type="button" data-action="apply-import">Ajouter ces rappels</button><button class="secondary-button" type="button" data-action="close-import">Annuler</button></div></div>`;
+    importDialog.innerHTML = `<header class="dialog-head"><div><p class="eyebrow">IMPORTATION AVANT AJOUT</p><h2>Aperçu de votre fichier</h2><p>Les titres de section deviennent le sujet de chaque planète. Les tâches existantes ne sont pas remplacées.</p></div><button class="dialog-close" type="button" data-action="close-import" aria-label="Fermer">×</button></header><div class="dialog-body"><p id="importSummary" class="subtle"></p><div class="import-preview"><ul id="importRows"></ul></div><div class="empty-actions"><button class="primary-button" type="button" data-action="apply-import">Ajouter ces rappels</button><button class="secondary-button" type="button" data-action="close-import">Annuler</button></div></div>`;
     document.body.appendChild(importDialog);
     importDialog.addEventListener("click", (event) => { if (event.target === importDialog) importDialog.close(); });
   }
@@ -428,10 +420,11 @@
       return raw.tasks.slice(0, 500).map((item) => {
         const input = item || {};
         const subject = data.subjects.find((s) => s.id === input.subjectId) || data.subjects.find((s) => normalize(s.name) === normalize(input.categoryName || ""));
-        return cleanTask({ title: input.title, description: input.description || input.doneWhen || "", subjectId: subject?.id || null, durationMinutes: input.durationMinutes || input.minutes || subject?.durationMinutes || 25, status: input.status === "done" ? "done" : "queued", priority: input.priority, createdAt: now() }, data.subjects);
+        return cleanTask({ title: input.title, description: input.description || input.doneWhen || "", subjectId: subject?.id || null, topicName: input.topicName || input.categoryName || subject?.name || "", planetColor: input.planetColor || input.color, planetSize: input.planetSize ?? subject?.size, durationMinutes: input.durationMinutes || input.minutes || subject?.durationMinutes || 25, reason: input.reason || "", status: input.status === "done" ? "done" : "queued", priority: input.priority, createdAt: now() }, data.subjects);
       }).filter((task) => task.title);
     }
     let currentSubject = null;
+    let currentTopicName = "";
     const result = [];
     for (const sourceLine of String(text).split(/\r?\n/)) {
       let line = sourceLine.trim(); if (!line) continue;
@@ -439,13 +432,14 @@
       if (heading) {
         const wanted = normalize(heading[1]);
         currentSubject = data.subjects.find((subject) => normalize(subject.name) === wanted) || null;
+        currentTopicName = currentSubject?.name || heading[1].trim();
         continue;
       }
       const bullet = line.match(/^(?:[-*+•]\s*|\d+[.)]\s*)(.*)$/);
       if (bullet) line = bullet[1].trim();
       const done = /^\[[xX]\]\s*/.test(line); line = line.replace(/^\[[ xX]\]\s*/, "").trim();
       if (!line || line.length > 180) continue;
-      result.push(cleanTask({ title: line, subjectId: currentSubject?.id || null, durationMinutes: currentSubject?.durationMinutes || 25, status: done ? "done" : "queued", createdAt: now(), source: fileName }, data.subjects));
+      result.push(cleanTask({ title: line, subjectId: currentSubject?.id || null, topicName: currentTopicName, durationMinutes: currentSubject?.durationMinutes || 25, status: done ? "done" : "queued", createdAt: now(), source: fileName }, data.subjects));
       if (result.length >= 500) break;
     }
     return result;
@@ -454,8 +448,8 @@
   function showImportPreview(tasks, fileName) {
     if (!importDialog) createImportDialog();
     pendingImport = tasks.filter((task) => task.title);
-    byId("importSummary").textContent = `${pendingImport.length} rappel${pendingImport.length === 1 ? "" : "s"} trouvé${pendingImport.length === 1 ? "" : "s"} dans « ${fileName} ». ${pendingImport.filter((task) => !task.subjectId).length} restent à classer.`;
-    byId("importRows").innerHTML = pendingImport.slice(0, 24).map((task) => `<li>${escapeHtml(task.title)} <span class="subtle">· ${escapeHtml(subjectById(task.subjectId)?.name || "À classer")}</span></li>`).join("") + (pendingImport.length > 24 ? `<li>… et ${pendingImport.length - 24} autres</li>` : "");
+    byId("importSummary").textContent = `${pendingImport.length} rappel${pendingImport.length === 1 ? "" : "s"} trouvé${pendingImport.length === 1 ? "" : "s"} dans « ${fileName} ». Chaque sujet importé reste modifiable sur sa planète.`;
+    byId("importRows").innerHTML = pendingImport.slice(0, 24).map((task) => `<li>${escapeHtml(task.title)} <span class="subtle">· ${escapeHtml(task.topicName || "Sans sujet")}</span></li>`).join("") + (pendingImport.length > 24 ? `<li>… et ${pendingImport.length - 24} autres</li>` : "");
     importDialog.showModal();
   }
 
@@ -521,32 +515,35 @@
 
   function drawCore(core, timestamp, urgency) {
     const reduced = motionPreference === "reduced";
-    const pulseRate = (urgency > 0.72 ? 1.35 : 0.56) * (reduced ? 0.45 : 1);
-    const pulseAmount = (urgency > 0.72 ? 0.035 : 0.012) * (reduced ? 0.5 : 1);
-    const beat = 1 + pulseAmount * Math.sin(timestamp * 0.001 * TAU * pulseRate);
-    const radius = core.radius * beat;
-    ctx.save(); ctx.globalCompositeOperation = "screen";
-    const halo = ctx.createRadialGradient(core.x, core.y, radius * 0.45, core.x, core.y, radius * 3.25);
-    halo.addColorStop(0, "rgba(185,161,126,.16)"); halo.addColorStop(.5, "rgba(129,157,148,.045)"); halo.addColorStop(1, "rgba(129,157,148,0)");
-    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(core.x, core.y, radius * 3.25, 0, TAU); ctx.fill(); ctx.restore();
-    ctx.save(); ctx.translate(core.x, core.y); ctx.rotate(-.23);
-    ctx.strokeStyle = "rgba(188,164,128,.32)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(0, 0, radius * 1.62, radius * .61, 0, 0, TAU); ctx.stroke();
-    ctx.strokeStyle = "rgba(153,181,171,.2)"; ctx.setLineDash([1.5, 7]); ctx.lineDashOffset = -timestamp * .004; ctx.beginPath(); ctx.ellipse(0, 0, radius * 1.92, radius * .75, .08, 0, TAU); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
-    ctx.save(); ctx.shadowColor = "rgba(194,167,126,.34)"; ctx.shadowBlur = radius * .42;
-    const sphere = ctx.createRadialGradient(core.x - radius * .38, core.y - radius * .42, 1, core.x + radius * .18, core.y + radius * .16, radius * 1.25);
-    sphere.addColorStop(0, "#f0e9d7"); sphere.addColorStop(.11, "#c4b28f"); sphere.addColorStop(.45, "#827b69"); sphere.addColorStop(.78, "#41494a"); sphere.addColorStop(1, "#171e20");
-    ctx.fillStyle = sphere; ctx.beginPath(); ctx.arc(core.x, core.y, radius, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
-    ctx.save(); ctx.beginPath(); ctx.arc(core.x, core.y, radius * .98, 0, TAU); ctx.clip();
-    ctx.globalAlpha = .12; ctx.strokeStyle = "#f5efdc"; ctx.lineWidth = Math.max(1, radius * .025);
-    for (let line = -2; line <= 2; line++) { const y = line * radius * .28; ctx.beginPath(); ctx.ellipse(core.x, core.y + y, radius * Math.sqrt(Math.max(.1, 1 - line * line * .045)), radius * .065, .07, 0, TAU); ctx.stroke(); }
-    ctx.globalAlpha = .08; ctx.beginPath(); ctx.ellipse(core.x - radius * .18, core.y, radius * .34, radius * .94, -.22, -1.1, 1.1); ctx.stroke(); ctx.restore();
-    ctx.globalAlpha = 1; ctx.strokeStyle = "rgba(238,228,207,.36)"; ctx.lineWidth = .85; ctx.beginPath(); ctx.arc(core.x, core.y, radius + 2, -.8, 1.8); ctx.stroke(); ctx.restore();
+    const pulseRate = (urgency > 0.72 ? 1.2 : 0.46) * (reduced ? 0.45 : 1);
+    const pulseAmount = (urgency > 0.72 ? 0.026 : 0.009) * (reduced ? 0.5 : 1);
+    const radius = core.radius * (1 + pulseAmount * Math.sin(timestamp * 0.001 * TAU * pulseRate));
+    const halo = ctx.createRadialGradient(core.x, core.y, radius * 0.35, core.x, core.y, radius * 2.45);
+    halo.addColorStop(0, "rgba(177,139,94,.12)"); halo.addColorStop(.5, "rgba(133,111,84,.035)"); halo.addColorStop(1, "rgba(133,111,84,0)");
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(core.x, core.y, radius * 2.45, 0, TAU); ctx.fill();
+
+    const surface = ctx.createRadialGradient(core.x - radius * .38, core.y - radius * .42, radius * .04, core.x + radius * .24, core.y + radius * .22, radius * 1.28);
+    surface.addColorStop(0, "#887966"); surface.addColorStop(.42, "#62594c"); surface.addColorStop(.78, "#37332e"); surface.addColorStop(1, "#1a1917");
+    ctx.save(); ctx.shadowColor = "rgba(148,118,82,.16)"; ctx.shadowBlur = radius * .18;
+    ctx.fillStyle = surface; ctx.beginPath(); ctx.arc(core.x, core.y, radius, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.save(); ctx.beginPath(); ctx.arc(core.x, core.y, radius * .99, 0, TAU); ctx.clip();
+    ctx.globalAlpha = .13; ctx.fillStyle = "#c3ad8a";
+    [[-.34,-.28,.16], [.27,-.47,.075], [.42,.12,.11], [-.2,.37,.09], [-.53,.17,.05]].forEach(([dx,dy,size]) => {
+      const x = core.x + radius * dx, y = core.y + radius * dy, r = radius * size;
+      ctx.beginPath(); ctx.arc(x - r * .12, y - r * .14, r, Math.PI * 1.08, Math.PI * 1.94); ctx.strokeStyle = "rgba(224,207,174,.22)"; ctx.lineWidth = Math.max(.7, radius * .018); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fillStyle = "rgba(20,19,17,.2)"; ctx.fill();
+      ctx.beginPath(); ctx.arc(x - r * .12, y - r * .18, r * .72, 0, TAU); ctx.fillStyle = "rgba(191,169,132,.055)"; ctx.fill();
+    });
+    ctx.globalAlpha = .09; ctx.fillStyle = "#171614";
+    [[-.1,-.08,.24], [.35,.38,.16], [-.42,.45,.13], [.15,-.02,.1]].forEach(([dx,dy,size]) => { ctx.beginPath(); ctx.arc(core.x + radius * dx, core.y + radius * dy, radius * size, 0, TAU); ctx.fill(); });
+    ctx.restore();
+    ctx.strokeStyle = "rgba(199,176,140,.24)"; ctx.lineWidth = .9; ctx.beginPath(); ctx.arc(core.x, core.y, radius, -.9, 1.8); ctx.stroke();
+    ctx.restore();
     coreHit = { x: core.x, y: core.y, radius: radius * 1.18 };
   }
-
   function drawTaskPlanet(task, index, activeTasks, core, timestamp, wallTime) {
     const subject = subjectById(task.subjectId);
-    const color = subject?.color || "#9ca6a1";
+    const color = task.planetColor || subject?.color || "#b18b5e";
     const phase = taskPhase(task, wallTime);
     const duration = Math.max(1, task.durationMinutes * 60_000);
     const progress = phase === "elapsed" ? 1 : clamp((wallTime - (task.startedAt || wallTime)) / duration, 0, 1);
@@ -563,7 +560,7 @@
     const urgency = phase === "running" ? 1 - distanceToDeadline / duration : phase === "elapsed" ? 1 : 0;
     const heartbeatScale = motionPreference === "reduced" ? 0.5 : 1;
     const heartbeat = urgency > .72 ? 1 + .055 * heartbeatScale * Math.sin(timestamp * .0085) : 1 + .018 * heartbeatScale * Math.sin(timestamp * .0022 + index);
-    const subjectSize = subject?.size || 1;
+    const subjectSize = task.planetSize || subject?.size || 1;
     const radius = clamp((10 + Math.min(5, subjectSize * 3)) * data.visual.planetScale * subjectSize, 7, 27) * heartbeat;
     const ageAfter = taskDeadline(task) ? wallTime - taskDeadline(task) : 0;
     const absorbing = phase === "elapsed" && ageAfter >= 0 && ageAfter < 1750;
@@ -609,7 +606,7 @@
     let urgency = 0;
     if (active.length) urgency = Math.max(...active.map((task) => Math.min(1, Math.max(0, (wallTime - task.startedAt) / Math.max(1, task.durationMinutes * 60_000)))));
     if (data.visual.showOrbits) {
-      [1.55, 2.15, 2.8].forEach((factor, index) => drawOrbit(core.x, core.y, core.radius * factor + 35, (core.radius * factor + 35) * .57, -.17 + index * .16, index % 2 ? "rgba(157,182,176,.48)" : "rgba(184,161,125,.48)", .11));
+      [1.55, 2.15, 2.8].forEach((factor, index) => drawOrbit(core.x, core.y, core.radius * factor + 35, (core.radius * factor + 35) * .57, -.17 + index * .16, index % 2 ? "rgba(167,157,139,.42)" : "rgba(184,161,125,.42)", .11));
     }
     active.forEach((task, index) => drawTaskPlanet(task, index, active, core, timestamp, wallTime));
     drawCore(core, timestamp, urgency);
@@ -719,6 +716,16 @@
   }
 
   createStars(); resizeCanvas(); render();
-  if (!DESKTOP_WIDGET) setInterval(() => { if (data.view === "orbit" || data.view === "tasks") { updateHeader(); if (data.view === "orbit") render(); } }, 1000);
+  if (!DESKTOP_WIDGET) setInterval(() => {
+    updateHeader();
+    document.querySelectorAll("[data-planet-card]").forEach((card) => {
+      const task = data.tasks.find((item) => item.id === card.dataset.planetCard);
+      if (!task) return;
+      const timer = card.querySelector(".planet-timer");
+      if (timer) timer.textContent = timeLabel(task);
+      card.classList.toggle("is-elapsed", taskPhase(task) === "elapsed");
+      card.classList.toggle("is-done", ["done", "archived"].includes(task.status));
+    });
+  }, 1000);
   requestAnimationFrame(drawFrame);
 })();

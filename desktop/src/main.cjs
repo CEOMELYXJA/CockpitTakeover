@@ -127,20 +127,24 @@ if (process.argv.includes("--qg-ambient-host")) {
     if (!value || value.format !== "cockpittakeover-widget-sync" || value.version !== 1 || !Array.isArray(value.subjects) || !Array.isArray(value.tasks) || value.subjects.length > 24 || value.tasks.length > 500) {
       throw new Error("Le fichier ne correspond pas à une synchronisation Cockpit Takeover valide.");
     }
+    const oldDefaultColors = { work: "#9bb7ac", home: "#b89e79", care: "#9eafc1", create: "#c08f8b", admin: "#b7aa83", personal: "#aa9bb7" };
+    const newDefaultColors = { work: "#b18b5e", home: "#98856c", care: "#858b91", create: "#9a6f64", admin: "#a49b81", personal: "#887968" };
     const subjects = value.subjects.map((entry) => {
       const item = entry && typeof entry === "object" ? entry : {};
       const id = safeText(item.id, 60);
       if (!/^[a-zA-Z0-9_-]{1,60}$/.test(id)) throw new Error("Un sujet contient un identifiant invalide.");
       return {
         id, name: safeText(item.name, 48) || "Sujet sans nom", description: safeText(item.description, 260),
-        color: /^#[0-9a-fA-F]{6}$/.test(item.color) ? item.color : "#9bb7ac",
+        color: /^#[0-9a-fA-F]{6}$/.test(item.color) ? (oldDefaultColors[item.id] === item.color.toLowerCase() ? newDefaultColors[item.id] : item.color) : "#b18b5e",
         size: Math.max(0.55, Math.min(1.65, Number(item.size) || 1)),
         durationMinutes: Math.max(5, Math.min(1440, Number(item.durationMinutes) || 25))
       };
     });
     const subjectIds = new Set(subjects.map((item) => item.id));
+    const subjectById = new Map(subjects.map((item) => [item.id, item]));
     const tasks = value.tasks.map((entry) => {
       const item = entry && typeof entry === "object" ? entry : {};
+      const legacySubject = subjectById.get(item.subjectId);
       const id = /^[a-zA-Z0-9_-]{1,80}$/.test(String(item.id || "")) ? String(item.id) : crypto.randomUUID();
       const duration = Number(item.durationMinutes);
       const startedAt = Number(item.startedAt);
@@ -148,6 +152,9 @@ if (process.argv.includes("--qg-ambient-host")) {
       return {
         id, title: safeText(item.title, 180), description: safeText(item.description, 700),
         subjectId: subjectIds.has(item.subjectId) ? item.subjectId : null,
+        topicName: safeText(item.topicName || legacySubject?.name, 48),
+        planetColor: /^#[0-9a-fA-F]{6}$/.test(item.planetColor || item.color) ? (item.planetColor || item.color) : (legacySubject?.color || "#b18b5e"),
+        planetSize: Number.isFinite(Number(item.planetSize)) ? Math.max(0.55, Math.min(1.65, Number(item.planetSize))) : (legacySubject?.size || 1),
         status: ["queued", "active", "done", "archived"].includes(item.status) ? item.status : "queued",
         durationMinutes: Number.isFinite(duration) ? Math.max(5, Math.min(1440, duration)) : 25,
         priority: [1, 2, 3].includes(Number(item.priority)) ? Number(item.priority) : 2,
