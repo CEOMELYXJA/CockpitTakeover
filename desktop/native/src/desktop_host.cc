@@ -271,12 +271,13 @@ Napi::Value AttachToDesktop(const Napi::CallbackInfo& info) {
   if (!IsWindow(child) || !IsWindow(parent)) throw Napi::Error::New(env, "La surface du bureau a changé pendant le démarrage.");
 
   Napi::Object display = info[2].As<Napi::Object>();
-  const double scale = display.Get("scale").ToNumber().DoubleValue();
-  if (!(scale > 0.25 && scale < 8.0)) throw Napi::RangeError::New(env, "Facteur d’échelle d’écran invalide.");
-  const int left = static_cast<int>(std::lround(display.Get("x").ToNumber().DoubleValue() * scale));
-  const int top = static_cast<int>(std::lround(display.Get("y").ToNumber().DoubleValue() * scale));
-  const int width = static_cast<int>(std::lround(display.Get("width").ToNumber().DoubleValue() * scale));
-  const int height = static_cast<int>(std::lround(display.Get("height").ToNumber().DoubleValue() * scale));
+  // Electron converts each monitor's DIP rectangle before this call. These
+  // values are already absolute physical screen pixels, including negatives.
+  const int left = static_cast<int>(std::lround(display.Get("x").ToNumber().DoubleValue()));
+  const int top = static_cast<int>(std::lround(display.Get("y").ToNumber().DoubleValue()));
+  const int width = static_cast<int>(std::lround(display.Get("width").ToNumber().DoubleValue()));
+  const int height = static_cast<int>(std::lround(display.Get("height").ToNumber().DoubleValue()));
+  if (width <= 0 || height <= 0) throw Napi::RangeError::New(env, "Dimensions d’écran invalides.");
   RECT parentBounds{};
   if (!GetWindowRect(parent, &parentBounds)) throw Napi::Error::New(env, "La géométrie du bureau Windows est indisponible.");
 
@@ -315,12 +316,10 @@ Napi::Value MoveDesktopWindow(const Napi::CallbackInfo& info) {
   if (!IsWindow(parent)) throw Napi::Error::New(env, "Le widget n’est plus rattaché au bureau Windows.");
 
   Napi::Object bounds = info[1].As<Napi::Object>();
-  const double scale = bounds.Get("scale").ToNumber().DoubleValue();
-  if (!(scale > 0.25 && scale < 8.0)) throw Napi::RangeError::New(env, "Facteur d’échelle d’écran invalide.");
-  const int left = static_cast<int>(std::lround(bounds.Get("x").ToNumber().DoubleValue() * scale));
-  const int top = static_cast<int>(std::lround(bounds.Get("y").ToNumber().DoubleValue() * scale));
-  const int width = static_cast<int>(std::lround(bounds.Get("width").ToNumber().DoubleValue() * scale));
-  const int height = static_cast<int>(std::lround(bounds.Get("height").ToNumber().DoubleValue() * scale));
+  const int left = static_cast<int>(std::lround(bounds.Get("x").ToNumber().DoubleValue()));
+  const int top = static_cast<int>(std::lround(bounds.Get("y").ToNumber().DoubleValue()));
+  const int width = static_cast<int>(std::lround(bounds.Get("width").ToNumber().DoubleValue()));
+  const int height = static_cast<int>(std::lround(bounds.Get("height").ToNumber().DoubleValue()));
   if (width <= 0 || height <= 0) throw Napi::RangeError::New(env, "Dimensions de widget invalides.");
 
   RECT parentBounds{};

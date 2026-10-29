@@ -35,11 +35,11 @@ function readHosts() {
   catch (error) { sendToParent({ type: "shell-error", message: error.message }); return []; }
 }
 
-function monitorBounds(display) {
+function physicalMonitorBounds(display) {
+  const bounds = screen.dipToScreenRect(null, display.bounds);
   return {
-    x: display.bounds.x, y: display.bounds.y,
-    width: display.bounds.width, height: display.bounds.height,
-    scale: display.scaleFactor || 1
+    x: Math.round(bounds.x), y: Math.round(bounds.y),
+    width: Math.round(bounds.width), height: Math.round(bounds.height)
   };
 }
 
@@ -64,18 +64,7 @@ function selectedDisplays() {
 }
 
 function physicalDisplayBounds(display) {
-  const hostBounds = scenes.find((window) => window.__qgDisplayId === display.id)?.__qgHostBounds
-    || chooseHost(cachedHosts, display)?.bounds;
-  if (hostBounds && Number.isFinite(hostBounds.x) && Number.isFinite(hostBounds.y)
-      && Number.isFinite(hostBounds.width) && Number.isFinite(hostBounds.height)
-      && hostBounds.width > 0 && hostBounds.height > 0) {
-    return { x: hostBounds.x, y: hostBounds.y, width: hostBounds.width, height: hostBounds.height };
-  }
-  const scale = display.scaleFactor || 1;
-  return {
-    x: display.bounds.x * scale, y: display.bounds.y * scale,
-    width: display.bounds.width * scale, height: display.bounds.height * scale
-  };
+  return physicalMonitorBounds(display);
 }
 
 function physicalDesktopBounds() {
@@ -132,14 +121,14 @@ function sceneSnapshot(window) {
 }
 
 function chooseHost(hosts, display) {
-  const wanted = monitorBounds(display);
+  const wanted = physicalMonitorBounds(display);
   let best = null, bestScore = -1;
   for (const candidate of hosts) {
     const r = candidate.bounds;
-    const left = Math.max(wanted.x, r.x / wanted.scale);
-    const top = Math.max(wanted.y, r.y / wanted.scale);
-    const right = Math.min(wanted.x + wanted.width, (r.x + r.width) / wanted.scale);
-    const bottom = Math.min(wanted.y + wanted.height, (r.y + r.height) / wanted.scale);
+    const left = Math.max(wanted.x, r.x);
+    const top = Math.max(wanted.y, r.y);
+    const right = Math.min(wanted.x + wanted.width, r.x + r.width);
+    const bottom = Math.min(wanted.y + wanted.height, r.y + r.height);
     const score = Math.max(0, right - left) * Math.max(0, bottom - top);
     if (score > bestScore) { best = candidate; bestScore = score; }
   }
@@ -197,13 +186,12 @@ function createScene(display, desktopHost) {
   window.webContents.once("did-finish-load", () => {
     try {
       if (!nativeHost) throw new Error("Le module Windows de la couche arrière n’est pas disponible.");
-       const currentDisplay = selectedDisplays().find((item) => item.id === display.id) || display;
-      const currentBounds = widgetBounds(currentDisplay);
+      const currentDisplay = selectedDisplays().find((item) => item.id === display.id) || display;
       window.__qgIconView = desktopHost.iconView;
       nativeHost.attachToDesktop(
         nativeWindowHandle,
         nativeHandleBuffer(desktopHost.handle),
-        monitorBounds({ ...currentDisplay, bounds: currentBounds })
+        physicalMonitorBounds(currentDisplay)
       );
       window.__qgAttached = true;
       window.showInactive();
@@ -230,10 +218,9 @@ function moveScenesInPlace() {
       if (window.isDestroyed() || !window.__qgAttached) continue;
       const display = displays.find((item) => item.id === window.__qgDisplayId);
       if (!display) return false;
-      const bounds = widgetBounds(display);
       nativeHost.moveDesktopWindow(
         window.getNativeWindowHandle(),
-        monitorBounds({ ...display, bounds })
+        physicalMonitorBounds(display)
       );
     }
     return true;
@@ -295,13 +282,14 @@ ipcMain.on("qg:scene-hit-area", (event, area) => {
   if (![area.x, area.y, area.radius].every(Number.isFinite)) return;
   const display = selectedDisplays().find((item) => item.id === window.__qgDisplayId);
   if (!display) return;
-  const scale = display.scaleFactor || 1;
   const bounds = physicalDisplayBounds(display);
+  const scaleX = bounds.width / display.bounds.width;
+  const scaleY = bounds.height / display.bounds.height;
   try {
     nativeHost.setCoreDragArea(window.__qgNativeHandle, nativeHandleBuffer(window.__qgIconView), {
-      x: bounds.x + area.x * scale,
-      y: bounds.y + area.y * scale,
-      radius: area.radius * scale
+      x: bounds.x + area.x * scaleX,
+      y: bounds.y + area.y * scaleY,
+      radius: area.radius * Math.min(scaleX, scaleY)
     });
   } catch (error) {
     sendToParent({ type: "shell-error", message: error.message });
@@ -314,13 +302,14 @@ ipcMain.on("qg:scene-mascot-area", (event, area) => {
   if (![area.x, area.y, area.radius].every(Number.isFinite)) return;
   const display = selectedDisplays().find((item) => item.id === window.__qgDisplayId);
   if (!display) return;
-  const scale = display.scaleFactor || 1;
   const bounds = physicalDisplayBounds(display);
+  const scaleX = bounds.width / display.bounds.width;
+  const scaleY = bounds.height / display.bounds.height;
   try {
     nativeHost.setMascotClickArea(window.__qgNativeHandle, nativeHandleBuffer(window.__qgIconView), {
-      x: bounds.x + area.x * display.bounds.width * scale,
-      y: bounds.y + area.y * display.bounds.height * scale,
-      radius: area.radius * scale,
+      x: bounds.x + area.x * scaleX,
+      y: bounds.y + area.y * scaleY,
+      radius: area.radius * Math.min(scaleX, scaleY),
       active: area.active === true
     });
   } catch (error) {
@@ -375,7 +364,11 @@ function pollCoreDrag() {
       continue;
     }
     if (![drag.x, drag.y, drag.originX, drag.originY, drag.coreOriginX, drag.coreOriginY].every(Number.isFinite)) continue;
-    const nextPosition = normalizedDesktopPoint(drag.x, drag.y);
+    // Preserve the grabbed point on the planet: the core follows the cursor's
+    // physical-pixel delta without snapping to the cursor or jumping at start.
+    const coreX = drag.coreOriginX + drag.x - drag.originX;
+    const coreY = drag.coreOriginY + drag.y - drag.originY;
+    const nextPosition = normalizedDesktopPoint(coreX, coreY);
     snapshot.settings = { ...snapshot.settings, widgetDesktopPosition: nextPosition };
     broadcastWidgetPosition();
     if (drag.phase === "end") sendToParent({ type: "widget-position", payload: nextPosition });

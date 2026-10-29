@@ -7,6 +7,7 @@
   const MAX_ZOOM = 6;
   const DETAIL_ZOOM = 4.8;
   const MASCOT_ID = "__cockpit_mascot__";
+  const coreCraterTextures = new Map();
   const MASCOT_JOKES = [
     "Pourquoi les astronautes n’utilisent-ils pas d’ordinateur ? Ils ont déjà une bonne souris de l’espace.",
     "Une planète entre dans un bar. Le barman dit : « On vous reconnaît, vous avez toujours votre anneau. »",
@@ -43,7 +44,7 @@
     { id: "admin", name: "Administration", description: "", color: "#c6ff55", size: 1, durationMinutes: 20 },
     { id: "personal", name: "Personnel", description: "", color: "#ad7bff", size: 1, durationMinutes: 25 }
   ];
-  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, microStarCount: 5200, microStarScale: 1.25, microStarSpeed: 1, showOrbits: true, center: { x: 0.5, y: 0.53 }, zoomPan: { x: 0, y: 0 }, viewYaw: 0, viewPitch: 0, zoom: 1, focusTaskId: null, coreColor: "#42dcff", coreCraters: "few" };
+  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, microStarCount: 8200, microStarScale: 1.4, microStarSpeed: 1, showOrbits: true, center: { x: 0.5, y: 0.53 }, zoomPan: { x: 0, y: 0 }, viewYaw: 0, viewPitch: 0, zoom: 1, focusTaskId: null, coreColor: "#42dcff", coreCraters: "few" };
   const DEFAULT_STATE = { version: 1, view: "tasks", taskFilter: "open", panelCollapsed: false, panelPosition: null, subjects: DEFAULT_SUBJECTS.map((item) => ({ ...item })), tasks: [], visual: structuredClone(DEFAULT_VISUAL), lastSync: 0 };
   const SKY_SPHERE_STARS = Array.from({ length: 6500 }, () => {
     const vertical = Math.random() * 2 - 1;
@@ -115,7 +116,7 @@
       planetScale: clamp(source.planetScale ?? DEFAULT_VISUAL.planetScale, 0.55, 1.65),
       speed: clamp(source.speed ?? DEFAULT_VISUAL.speed, 0.2, 1.8),
       stars: Math.round(clamp(source.stars ?? DEFAULT_VISUAL.stars, 12, 64)),
-      microStarCount: Math.round(clamp(source.microStarCount ?? DEFAULT_VISUAL.microStarCount, 0, 12000)),
+      microStarCount: Math.round(clamp(source.microStarCount ?? DEFAULT_VISUAL.microStarCount, 0, 14000)),
       microStarScale: clamp(source.microStarScale ?? DEFAULT_VISUAL.microStarScale, 0.75, 2.25),
       microStarSpeed: clamp(source.microStarSpeed ?? DEFAULT_VISUAL.microStarSpeed, 0.25, 2.5),
       showOrbits: source.showOrbits !== false,
@@ -145,6 +146,10 @@
       const tasks = raw.tasks.slice(0, 500).map((task) => cleanTask(task, uniqueSubjects)).filter((task) => task.title);
       const visual = cleanVisual(raw.visual);
       if (raw.visual && raw.visual.microStarScale == null && Number(raw.visual.microStarCount) === 2200) visual.microStarCount = DEFAULT_VISUAL.microStarCount;
+      if (raw.visual && Number(raw.visual.microStarCount) === 5200 && Number(raw.visual.microStarScale) === 1.25) {
+        visual.microStarCount = DEFAULT_VISUAL.microStarCount;
+        visual.microStarScale = DEFAULT_VISUAL.microStarScale;
+      }
       return { ...structuredClone(DEFAULT_STATE), view: raw.view === "settings" ? "settings" : "tasks", taskFilter: ["open", "elapsed", "done", "all"].includes(raw.taskFilter) ? raw.taskFilter : "open", panelCollapsed: Boolean(raw.panelCollapsed), panelPosition: cleanPanelPosition(raw.panelPosition), subjects: uniqueSubjects, tasks, visual, lastSync: Number(raw.lastSync) || 0 };
     } catch (_) { return structuredClone(DEFAULT_STATE); }
   }
@@ -247,6 +252,7 @@
     const isSettings = data.view === "settings";
     document.querySelectorAll("[data-view]").forEach((button) => button.classList.toggle("is-active", button.dataset.view === data.view));
     byId("controlPanel").classList.toggle("is-collapsed", data.panelCollapsed);
+    byId("mobilePanelToggle").hidden = data.panelCollapsed;
     for (const id of ["panelClose", "panelCollapseToggle"]) {
       const button = byId(id);
       button.textContent = data.panelCollapsed ? "⌄" : "⌃";
@@ -317,7 +323,7 @@
   }
   function renderSettingsView() {
     const v = data.visual;
-    return `<section class="panel-section settings-section"><h3 class="section-title">Noyau central</h3><label class="view-row"><span>Couleur du noyau<small>La sphère centrale et son halo.</small></span><input data-visual="coreColor" type="color" value="${v.coreColor}"></label><label class="view-row"><span>Relief et cratères<small>Choisissez une surface de la lune géante.</small></span><select data-visual="coreCraters"><option value="none" ${v.coreCraters === "none" ? "selected" : ""}>Aucun</option><option value="few" ${v.coreCraters === "few" ? "selected" : ""}>Quelques cratères</option><option value="many" ${v.coreCraters === "many" ? "selected" : ""}>Beaucoup de cratères</option><option value="everest" ${v.coreCraters === "everest" ? "selected" : ""}>Mont Everest — grand relief</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label><label class="view-row"><span>Micro-constellations<small>Quantité d’étoiles animées visibles dans l’application et le widget.</small></span><input data-visual="microStarCount" type="range" min="0" max="12000" step="200" value="${v.microStarCount}"><output data-output="microStarCount">${v.microStarCount.toLocaleString("fr-CA")}</output></label><label class="view-row"><span>Taille des micro-étoiles</span><input data-visual="microStarScale" type="range" min="0.75" max="2.25" step="0.05" value="${v.microStarScale}"><output data-output="microStarScale">${v.microStarScale.toFixed(2)}×</output></label><label class="view-row"><span>Vitesse des micro-orbites</span><input data-visual="microStarSpeed" type="range" min="0.25" max="2.5" step="0.05" value="${v.microStarSpeed}"><output data-output="microStarSpeed">${v.microStarSpeed.toFixed(2)}×</output></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, elle se met à jour automatiquement.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
+    return `<section class="panel-section settings-section"><h3 class="section-title">Noyau central</h3><label class="view-row"><span>Couleur du noyau<small>La sphère centrale et son halo.</small></span><input data-visual="coreColor" type="color" value="${v.coreColor}"></label><label class="view-row"><span>Relief et cratères<small>Choisissez une surface de la lune géante.</small></span><select data-visual="coreCraters"><option value="none" ${v.coreCraters === "none" ? "selected" : ""}>Aucun</option><option value="few" ${v.coreCraters === "few" ? "selected" : ""}>Quelques cratères</option><option value="many" ${v.coreCraters === "many" ? "selected" : ""}>Beaucoup de cratères</option><option value="everest" ${v.coreCraters === "everest" ? "selected" : ""}>Mont Everest — grand relief</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label><label class="view-row"><span>Micro-constellations<small>Quantité d’étoiles animées visibles dans l’application et le widget.</small></span><input data-visual="microStarCount" type="range" min="0" max="14000" step="200" value="${v.microStarCount}"><output data-output="microStarCount">${v.microStarCount.toLocaleString("fr-CA")}</output></label><label class="view-row"><span>Taille des micro-étoiles</span><input data-visual="microStarScale" type="range" min="0.75" max="2.25" step="0.05" value="${v.microStarScale}"><output data-output="microStarScale">${v.microStarScale.toFixed(2)}×</output></label><label class="view-row"><span>Vitesse des micro-orbites</span><input data-visual="microStarSpeed" type="range" min="0.25" max="2.5" step="0.05" value="${v.microStarSpeed}"><output data-output="microStarSpeed">${v.microStarSpeed.toFixed(2)}×</output></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, elle se met à jour automatiquement.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
   }
   function updateHeader() {
     const badge = byId("syncBadge");
@@ -576,7 +582,7 @@
   }
 
   function createMicroStars() {
-    const count = Math.round(clamp(data.visual.microStarCount, 0, 12000));
+    const count = Math.round(clamp(data.visual.microStarCount, 0, 14000));
     const span = Math.max(1, Math.min(width, height));
     microStars = [];
     microStarClusters = [];
@@ -908,40 +914,111 @@
 
   function drawCoreCraters(core, radius, style, color) {
     if (style === "none") return;
+    const key = `${style}:${color}`;
+    let texture = coreCraterTextures.get(key);
+    if (!texture) {
+      texture = document.createElement("canvas");
+      texture.width = texture.height = 1024;
+      paintCoreCraterTexture(texture.getContext("2d"), { x: 512, y: 512 }, 512, style, color);
+      if (coreCraterTextures.size >= 6) coreCraterTextures.delete(coreCraterTextures.keys().next().value);
+      coreCraterTextures.set(key, texture);
+    }
+    ctx.drawImage(texture, core.x - radius, core.y - radius, radius * 2, radius * 2);
+  }
+
+  function paintCoreCraterTexture(surface, core, radius, style, color) {
     const craters = [
       [-.56,-.28,.071],[-.29,-.51,.058],[.06,-.58,.069],[.4,-.43,.082],[.57,-.11,.054],[-.48,.12,.09],[-.16,-.05,.062],[.19,-.19,.067],[.48,.19,.073],[-.35,.43,.061],[-.02,.48,.075],[.28,.47,.05],[-.64,.04,.044],[.02,.2,.051],[.63,.04,.052],[-.02,-.37,.046],[.35,-.05,.051],[-.5,-.49,.045],[.57,-.32,.044],[-.23,.28,.052],[.12,.57,.043],[-.52,.35,.042],[.43,.39,.041],[-.32,-.2,.039]
     ];
     const count = style === "few" ? 6 : style === "many" ? 24 : 9;
-    ctx.save();
+    surface.save();
     for (const [nx, ny, scale] of craters.slice(0, count)) {
-      const x = core.x + nx * radius, y = core.y + ny * radius, size = scale * radius;
-      const rotation = (nx - ny) * 0.75;
-      ctx.globalAlpha = .43;
-      ctx.fillStyle = "rgba(4,9,20,.46)";
-      ctx.beginPath(); ctx.ellipse(x, y, size * 1.25, size * .78, rotation, 0, TAU); ctx.fill();
-      ctx.globalAlpha = .43; ctx.strokeStyle = colorWithAlpha(color, .48); ctx.lineWidth = Math.max(.65, radius * .012);
-      ctx.beginPath(); ctx.ellipse(x - size * .08, y - size * .07, size * 1.1, size * .7, rotation, Math.PI * 1.04, Math.PI * 1.92); ctx.stroke();
-      ctx.globalAlpha = .36; ctx.strokeStyle = "rgba(3,7,15,.7)";
-      ctx.beginPath(); ctx.ellipse(x + size * .06, y + size * .05, size * .78, size * .48, rotation, -.1, Math.PI * .92); ctx.stroke();
+      const size = scale * radius;
+      const radial = Math.hypot(nx, ny);
+      const surfaceDepth = Math.sqrt(Math.max(.08, 1 - Math.min(.993, radial * radial)));
+      const x = core.x + nx * radius, y = core.y + ny * radius;
+      // A crater on a sphere is foreshortened toward the limb, where it also
+      // picks up the same depth shading as the surrounding curved surface.
+      const radialRadius = size * Math.max(.22, surfaceDepth);
+      const tangentRadius = size;
+      const rotation = Math.atan2(ny, nx);
+      const wobble = (angle, seed) => 1 + .018 * Math.sin(angle * 5 + seed) + .009 * Math.sin(angle * 9 - seed * 1.7);
+      const traceRim = (rx, ry, seed) => {
+        const segments = 40;
+        surface.beginPath();
+        for (let index = 0; index <= segments; index++) {
+          const angle = index / segments * TAU;
+          const irregularity = wobble(angle, seed);
+          const px = Math.cos(angle) * rx * irregularity;
+          const py = Math.sin(angle) * ry * irregularity;
+          if (index === 0) surface.moveTo(px, py); else surface.lineTo(px, py);
+        }
+        surface.closePath();
+      };
+
+      surface.save();
+      surface.translate(x, y);
+      surface.rotate(rotation);
+      surface.globalAlpha = .56;
+      const ejecta = surface.createRadialGradient(0, 0, size * .62, 0, 0, size * 1.38);
+      ejecta.addColorStop(0, colorWithAlpha(color, .08));
+      ejecta.addColorStop(.68, colorWithAlpha(color, .035));
+      ejecta.addColorStop(1, colorWithAlpha(color, 0));
+      surface.fillStyle = ejecta;
+      surface.beginPath(); surface.ellipse(0, 0, radialRadius * 1.42, tangentRadius * 1.3, 0, 0, TAU); surface.fill();
+
+      // Raised, slightly uneven rim; the bright and dark arcs imply relief.
+      traceRim(radialRadius * 1.08, tangentRadius * 1.08, nx * 13 + ny * 7);
+      surface.fillStyle = "rgba(4,8,18,.24)"; surface.fill();
+      surface.globalAlpha = .5;
+      surface.strokeStyle = "rgba(1,4,12,.7)";
+      surface.lineWidth = Math.max(.65, size * .105);
+      traceRim(radialRadius * 1.08, tangentRadius * 1.08, nx * 13 + ny * 7); surface.stroke();
+      surface.globalAlpha = .54;
+      surface.strokeStyle = colorWithAlpha(tintColor(color, .45), .55);
+      surface.lineWidth = Math.max(.55, size * .08);
+      surface.beginPath(); surface.ellipse(0, 0, radialRadius * 1.04, tangentRadius * 1.04, 0, Math.PI * 1.08, Math.PI * 1.91); surface.stroke();
+
+      // Bowl gradient and its offset shadow create a recessed, lit interior.
+      const bowl = surface.createRadialGradient(-radialRadius * .25, -tangentRadius * .34, size * .04, 0, 0, size * 1.02);
+      bowl.addColorStop(0, colorWithAlpha(tintColor(color, .52), .3));
+      bowl.addColorStop(.34, colorWithAlpha(color, .12));
+      bowl.addColorStop(.78, "rgba(3,7,16,.34)");
+      bowl.addColorStop(1, "rgba(2,5,13,.68)");
+      surface.globalAlpha = .86;
+      surface.fillStyle = bowl;
+      surface.beginPath(); surface.ellipse(0, 0, radialRadius * .9, tangentRadius * .9, 0, 0, TAU); surface.fill();
+      surface.globalAlpha = .55;
+      surface.strokeStyle = "rgba(0,3,10,.76)";
+      surface.lineWidth = Math.max(.5, size * .055);
+      surface.beginPath(); surface.ellipse(size * .025, size * .035, radialRadius * .79, tangentRadius * .79, 0, -.08, Math.PI * .94); surface.stroke();
+      if (size > radius * .058) {
+        const peak = surface.createRadialGradient(-size * .035, -size * .035, size * .015, 0, 0, size * .17);
+        peak.addColorStop(0, colorWithAlpha(tintColor(color, .7), .36));
+        peak.addColorStop(1, colorWithAlpha(color, 0));
+        surface.globalAlpha = .65; surface.fillStyle = peak;
+        surface.beginPath(); surface.ellipse(0, 0, radialRadius * .19, tangentRadius * .15, 0, 0, TAU); surface.fill();
+      }
+      surface.restore();
     }
     if (style === "everest") {
       const x = core.x - radius * .16, y = core.y - radius * .11, basin = radius * .29;
-      ctx.globalAlpha = .5; ctx.fillStyle = "rgba(4,8,18,.58)";
-      ctx.beginPath(); ctx.ellipse(x, y, basin * 1.2, basin * .78, -.24, 0, TAU); ctx.fill();
-      ctx.globalAlpha = .72; ctx.strokeStyle = colorWithAlpha(color, .8); ctx.lineWidth = Math.max(1, radius * .022);
-      ctx.beginPath(); ctx.ellipse(x, y - basin * .035, basin, basin * .62, -.24, Math.PI * 1.04, Math.PI * 1.92); ctx.stroke();
-      ctx.globalAlpha = .8;
-      const peak = ctx.createLinearGradient(x, y - basin * .48, x, y + basin * .48);
+      surface.globalAlpha = .5; surface.fillStyle = "rgba(4,8,18,.58)";
+      surface.beginPath(); surface.ellipse(x, y, basin * 1.2, basin * .78, -.24, 0, TAU); surface.fill();
+      surface.globalAlpha = .72; surface.strokeStyle = colorWithAlpha(color, .8); surface.lineWidth = Math.max(1, radius * .022);
+      surface.beginPath(); surface.ellipse(x, y - basin * .035, basin, basin * .62, -.24, Math.PI * 1.04, Math.PI * 1.92); surface.stroke();
+      surface.globalAlpha = .8;
+      const peak = surface.createLinearGradient(x, y - basin * .48, x, y + basin * .48);
       peak.addColorStop(0, "#f5ffff"); peak.addColorStop(.32, tintColor(color, .58)); peak.addColorStop(1, tintColor(color, -.45));
-      ctx.fillStyle = peak; ctx.strokeStyle = "rgba(245,252,255,.58)"; ctx.lineWidth = Math.max(.7, radius * .012);
-      ctx.beginPath();
-      ctx.moveTo(x - basin * .54, y + basin * .4);
-      ctx.bezierCurveTo(x - basin * .44, y + basin * .08, x - basin * .42, y - basin * .16, x - basin * .23, y - basin * .22);
-      ctx.bezierCurveTo(x - basin * .06, y - basin * .31, x + basin * .01, y - basin * .55, x + basin * .17, y - basin * .49);
-      ctx.bezierCurveTo(x + basin * .37, y - basin * .41, x + basin * .35, y - basin * .12, x + basin * .52, y + basin * .4);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
+      surface.fillStyle = peak; surface.strokeStyle = "rgba(245,252,255,.58)"; surface.lineWidth = Math.max(.7, radius * .012);
+      surface.beginPath();
+      surface.moveTo(x - basin * .54, y + basin * .4);
+      surface.bezierCurveTo(x - basin * .44, y + basin * .08, x - basin * .42, y - basin * .16, x - basin * .23, y - basin * .22);
+      surface.bezierCurveTo(x - basin * .06, y - basin * .31, x + basin * .01, y - basin * .55, x + basin * .17, y - basin * .49);
+      surface.bezierCurveTo(x + basin * .37, y - basin * .41, x + basin * .35, y - basin * .12, x + basin * .52, y + basin * .4);
+      surface.closePath(); surface.fill(); surface.stroke();
     }
-    ctx.restore(); ctx.globalAlpha = 1;
+    surface.restore();
   }
 
   function drawPlanetRings(x, y, radius, color, count, glowing, rocky, rotation, fade, timestamp) {
@@ -1563,6 +1640,7 @@
     const panel = byId("controlPanel");
     const collapsed = panel.classList.toggle("is-collapsed");
     data.panelCollapsed = collapsed; save();
+    byId("mobilePanelToggle").hidden = collapsed;
     for (const id of ["panelClose", "panelCollapseToggle"]) {
       const button = byId(id);
       button.textContent = collapsed ? "⌄" : "⌃";
@@ -1574,9 +1652,10 @@
   };
   byId("panelClose").addEventListener("click", togglePanelCollapsed);
   byId("panelCollapseToggle").addEventListener("click", togglePanelCollapsed);
+  byId("mobilePanelToggle").addEventListener("click", togglePanelCollapsed);
   const panelHeader = byId("panelHeader");
   panelHeader.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || event.target.closest("button")) return;
+    if (event.button !== 0 || data.panelCollapsed || event.target.closest("button")) return;
     const rect = byId("controlPanel").getBoundingClientRect();
     panelDrag = { pointerId: event.pointerId, pointerX: event.clientX, pointerY: event.clientY, x: (rect.left + rect.width / 2) / Math.max(1, window.innerWidth), y: (rect.top + rect.height / 2) / Math.max(1, window.innerHeight) };
     try { panelHeader.setPointerCapture(event.pointerId); } catch (_) {}
