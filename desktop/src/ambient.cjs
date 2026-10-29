@@ -54,6 +54,63 @@ function widgetBounds(display) {
   return { ...display.bounds };
 }
 
+function physicalDisplayBounds(display) {
+  const scale = display.scaleFactor || 1;
+  return {
+    x: display.bounds.x * scale, y: display.bounds.y * scale,
+    width: display.bounds.width * scale, height: display.bounds.height * scale
+  };
+}
+
+function physicalDesktopBounds() {
+  const displays = screen.getAllDisplays();
+  if (!displays.length) return { x: 0, y: 0, width: 1, height: 1 };
+  const bounds = displays.map(physicalDisplayBounds);
+  const left = Math.min(...bounds.map((item) => item.x));
+  const top = Math.min(...bounds.map((item) => item.y));
+  const right = Math.max(...bounds.map((item) => item.x + item.width));
+  const bottom = Math.max(...bounds.map((item) => item.y + item.height));
+  return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+}
+
+function normalizedDesktopPoint(x, y) {
+  const bounds = physicalDesktopBounds();
+  return {
+    x: Math.max(0, Math.min(1, (x - bounds.x) / bounds.width)),
+    y: Math.max(0, Math.min(1, (y - bounds.y) / bounds.height))
+  };
+}
+
+function globalCorePosition() {
+  const bounds = physicalDesktopBounds();
+  const saved = snapshot.settings?.widgetDesktopPosition;
+  if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+    return { x: bounds.x + saved.x * bounds.width, y: bounds.y + saved.y * bounds.height };
+  }
+  const primary = screen.getPrimaryDisplay();
+  const displayBounds = physicalDisplayBounds(primary);
+  const legacy = snapshot.settings?.widgetPosition || snapshot.settings?.visual?.center || { x: 0.5, y: 0.53 };
+  const localX = Number.isFinite(legacy.x) ? legacy.x : 0.5;
+  const localY = Number.isFinite(legacy.y) ? legacy.y : 0.53;
+  return {
+    x: displayBounds.x + localX * displayBounds.width,
+    y: displayBounds.y + localY * displayBounds.height
+  };
+}
+
+function sceneWidgetPosition(window) {
+  const display = screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
+  if (!display) return snapshot.settings?.widgetPosition || snapshot.settings?.visual?.center || { x: 0.5, y: 0.53 };
+  const bounds = physicalDisplayBounds(display);
+  const core = globalCorePosition();
+  return { x: (core.x - bounds.x) / bounds.width, y: (core.y - bounds.y) / bounds.height };
+}
+
+function sceneSnapshot(window) {
+  const settings = { ...snapshot.settings, widgetPosition: sceneWidgetPosition(window) };
+  return { subjects: snapshot.subjects, categories: snapshot.categories, tasks: snapshot.tasks, settings };
+}
+
 function chooseHost(hosts, display) {
   const wanted = monitorBounds(display);
   let best = null, bestScore = -1;
@@ -70,8 +127,7 @@ function chooseHost(hosts, display) {
 }
 
 function broadcastState() {
-  const message = { subjects: snapshot.subjects, categories: snapshot.categories, tasks: snapshot.tasks, settings: snapshot.settings };
-  for (const window of scenes) if (!window.isDestroyed() && !window.webContents.isLoading()) window.webContents.send("qg:scene-state", message);
+  for (const window of scenes) if (!window.isDestroyed() && !window.webContents.isLoading()) window.webContents.send("qg:scene-state", sceneSnapshot(window));
 }
 
 function notifyUnavailable(message) {
@@ -122,7 +178,7 @@ function createScene(display, desktopHost) {
       );
       window.__qgAttached = true;
       window.showInactive();
-      window.webContents.send("qg:scene-state", { subjects: snapshot.subjects, categories: snapshot.categories, tasks: snapshot.tasks, settings: snapshot.settings });
+      window.webContents.send("qg:scene-state", sceneSnapshot(window));
       reportStatus("visible", "Widget transparent actif derrière les icônes.");
     } catch (error) {
       reportStatus("unavailable", "Windows n’a pas pu afficher le widget derrière les icônes.");
@@ -223,12 +279,39 @@ ipcMain.on("qg:scene-hit-area", (event, area) => {
   }
 });
 
+ipcMain.on("qg:scene-mascot-area", (event, area) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window || window.isDestroyed() || !window.__qgAttached || !area || !nativeHost?.setMascotClickArea) return;
+  if (![area.x, area.y, area.radius].every(Number.isFinite)) return;
+  const display = screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
+  if (!display) return;
+  const scale = display.scaleFactor || 1;
+  const bounds = physicalDisplayBounds(display);
+  try {
+    nativeHost.setMascotClickArea(window.__qgNativeHandle, nativeHandleBuffer(window.__qgIconView), {
+      x: bounds.x + area.x * display.bounds.width * scale,
+      y: bounds.y + area.y * display.bounds.height * scale,
+      radius: area.radius * scale,
+      active: area.active === true
+    });
+  } catch (error) {
+    sendToParent({ type: "shell-error", message: error.message });
+  }
+});
+
 ipcMain.on("qg:scene-position", (_event, position) => {
   if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
-  sendToParent({ type: "widget-position", payload: {
-    x: Math.max(0.07, Math.min(0.93, position.x)),
-    y: Math.max(0.09, Math.min(0.91, position.y))
-  } });
+  const window = BrowserWindow.fromWebContents(_event.sender);
+  const display = window && screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
+  if (!display) return;
+  const bounds = physicalDisplayBounds(display);
+  const normalized = normalizedDesktopPoint(
+    bounds.x + position.x * bounds.width,
+    bounds.y + position.y * bounds.height
+  );
+  snapshot.settings = { ...snapshot.settings, widgetDesktopPosition: normalized };
+  broadcastState();
+  sendToParent({ type: "widget-position", payload: normalized });
 });
 
 ipcMain.on("qg:scene-view", (_event, view) => {
@@ -258,16 +341,20 @@ function pollCoreDrag() {
   for (const drag of events || []) {
     const window = scenes.find((scene) => scene.__qgHandle === String(drag.handle));
     if (!window || window.isDestroyed() || window.webContents.isLoading()) continue;
+    if (drag.kind === "mascot-click") {
+      window.webContents.send("qg:scene-mascot-click");
+      continue;
+    }
     const display = screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
     if (!display) continue;
-    const scale = display.scaleFactor || 1;
-    const deltaX = (drag.x - drag.originX) / (scale * display.bounds.width);
-    const deltaY = (drag.y - drag.originY) / (scale * display.bounds.height);
-    window.webContents.send("qg:scene-core-drag", {
-      phase: drag.phase,
-      deltaX,
-      deltaY
-    });
+    if (![drag.x, drag.y, drag.originX, drag.originY, drag.coreOriginX, drag.coreOriginY].every(Number.isFinite)) continue;
+    const nextPosition = normalizedDesktopPoint(
+      drag.coreOriginX + drag.x - drag.originX,
+      drag.coreOriginY + drag.y - drag.originY
+    );
+    snapshot.settings = { ...snapshot.settings, widgetDesktopPosition: nextPosition };
+    broadcastState();
+    if (drag.phase === "end") sendToParent({ type: "widget-position", payload: nextPosition });
   }
 }
 
@@ -324,4 +411,3 @@ app.on("before-quit", () => {
 });
 
 app.on("window-all-closed", () => { if (shuttingDown) app.quit(); });
-

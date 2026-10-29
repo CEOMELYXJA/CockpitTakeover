@@ -45,7 +45,7 @@ if (process.argv.includes("--qg-ambient-host")) {
   let tasksPath = "";
   let settingsPath = "";
   let tasks = [];
-  let settings = { side: "right", opacity: 0.82, motion: "measured", fieldEnabled: true, startWithWindows: false, panelBounds: null, widgetPosition: null };
+  let settings = { side: "right", opacity: 0.82, motion: "measured", fieldEnabled: true, startWithWindows: false, panelBounds: null, widgetPosition: null, widgetDesktopPosition: null };
   let siteSync = { subjects: [], tasks: [], visual: null, savedAt: 0 };
   let quitting = false;
   let appReady = false;
@@ -102,6 +102,9 @@ if (process.argv.includes("--qg-ambient-host")) {
     const position = next.widgetPosition && typeof next.widgetPosition === "object" ? next.widgetPosition : null;
     const widgetPosition = position && Number.isFinite(position.x) && Number.isFinite(position.y)
       ? { x: Math.max(0.07, Math.min(0.93, Number(position.x))), y: Math.max(0.09, Math.min(0.91, Number(position.y))) } : null;
+    const desktopPosition = next.widgetDesktopPosition && typeof next.widgetDesktopPosition === "object" ? next.widgetDesktopPosition : null;
+    const widgetDesktopPosition = desktopPosition && Number.isFinite(desktopPosition.x) && Number.isFinite(desktopPosition.y)
+      ? { x: Math.max(0, Math.min(1, Number(desktopPosition.x))), y: Math.max(0, Math.min(1, Number(desktopPosition.y))) } : null;
     const rawWidgetView = next.widgetView && typeof next.widgetView === "object" ? next.widgetView : null;
     const bounded = (value, low, high, fallback) => Number.isFinite(Number(value)) ? Math.max(low, Math.min(high, Number(value))) : fallback;
     const widgetView = rawWidgetView ? {
@@ -122,6 +125,7 @@ if (process.argv.includes("--qg-ambient-host")) {
       startWithWindows: Boolean(next.startWithWindows),
       panelBounds: validBounds,
       widgetPosition,
+      widgetDesktopPosition,
       widgetView
     };
   }
@@ -461,7 +465,7 @@ if (process.argv.includes("--qg-ambient-host")) {
       if (!message || typeof message !== "object") return;
       if (message.type === "status" && message.payload) setAmbientStatus(message.payload.status, message.payload.message);
       if (message.type === "widget-position" && message.payload && Number.isFinite(message.payload.x) && Number.isFinite(message.payload.y)) {
-        settings = cleanSettings({ ...settings, widgetPosition: message.payload });
+        settings = cleanSettings({ ...settings, widgetDesktopPosition: message.payload });
         queueSettingsWrite().catch((error) => console.error("Widget position save failed:", error.message));
         syncViews();
       }
@@ -635,6 +639,7 @@ if (process.argv.includes("--qg-ambient-host")) {
       settings = cleanSettings({
         ...settings,
         widgetPosition: { x: 0.5, y: 0.53 },
+        widgetDesktopPosition: null,
         widgetView: { viewYaw: 0, viewPitch: 0, zoom: 1, zoomPan: { x: 0, y: 0 }, focusTaskId: null }
       });
       await queueSettingsWrite();
@@ -805,4 +810,3 @@ if (process.argv.includes("--qg-ambient-host")) {
   });
   }
 }
-

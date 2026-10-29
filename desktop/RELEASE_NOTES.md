@@ -1,6 +1,5 @@
-# Cockpit Takeover Widget 0.11.5
+# Cockpit Takeover Widget 0.11.6
 
-- Le bouton de synchronisation du site envoie maintenant la carte directement au widget local.
-- Aucune fenêtre de fichier ni copie JSON n’est nécessaire.
-- Les menus, l’apparence et le comportement du widget restent inchangés.
-
+- Le noyau peut traverser les écrans; toute la scène suit le glissement en direct et garde sa position après fermeture.
+- La planète de divertissement répond au clic gauche seulement lorsqu’elle est au premier plan; les icônes du bureau gardent la priorité.
+- Le clic droit conserve le déplacement du noyau.

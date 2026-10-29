@@ -18,10 +18,19 @@ contextBridge.exposeInMainWorld("qgScene", Object.freeze({
     if (!area || !Number.isFinite(area.x) || !Number.isFinite(area.y) || !Number.isFinite(area.radius)) return;
     ipcRenderer.send("qg:scene-hit-area", { x: area.x, y: area.y, radius: area.radius });
   },
+  setMascotClickArea: (area) => {
+    if (!area || !Number.isFinite(area.x) || !Number.isFinite(area.y) || !Number.isFinite(area.radius)) return;
+    ipcRenderer.send("qg:scene-mascot-area", { x: area.x, y: area.y, radius: area.radius, active: area.active === true });
+  },
   onCoreDrag: (handler) => {
     const listener = (_event, drag) => handler(drag);
     ipcRenderer.on("qg:scene-core-drag", listener);
     return () => ipcRenderer.removeListener("qg:scene-core-drag", listener);
+  },
+  onMascotClick: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on("qg:scene-mascot-click", listener);
+    return () => ipcRenderer.removeListener("qg:scene-mascot-click", listener);
   },
   saveWidgetPosition: (position) => {
     if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
@@ -42,4 +51,3 @@ contextBridge.exposeInMainWorld("qgScene", Object.freeze({
   },
   openPinball: () => ipcRenderer.send("qg:scene-pinball")
 }));
-

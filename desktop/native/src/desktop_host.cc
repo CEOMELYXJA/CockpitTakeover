@@ -35,15 +35,28 @@ struct CoreDragEvent {
   HWND child = nullptr;
   POINT point{};
   POINT origin{};
+  POINT coreOrigin{};
   int phase = 0;  // 0: start, 1: move, 2: end
+  bool mascotClick = false;
+};
+
+struct MascotClickArea {
+  HWND child = nullptr;
+  HWND iconView = nullptr;
+  POINT center{};
+  double radius = 0;
+  bool active = false;
 };
 
 std::mutex g_dragMutex;
 std::vector<CoreDragArea> g_dragAreas;
+std::vector<MascotClickArea> g_mascotClickAreas;
 std::deque<CoreDragEvent> g_dragEvents;
 HHOOK g_mouseHook = nullptr;
 HWND g_draggingChild = nullptr;
+HWND g_mascotClickingChild = nullptr;
 POINT g_dragOrigin{};
+POINT g_dragOriginCore{};
 
 bool IsWindowClass(HWND hwnd, const wchar_t* expected);
 
@@ -98,7 +111,8 @@ LRESULT CALLBACK CoreDragMouseHook(int code, WPARAM message, LPARAM data) {
       if (HasDesktopIconAtPoint(area.iconView, mouse->pt)) break;
       g_draggingChild = area.child;
       g_dragOrigin = mouse->pt;
-      g_dragEvents.push_back({ area.child, mouse->pt, g_dragOrigin, 0 });
+      g_dragOriginCore = area.center;
+      g_dragEvents.push_back({ area.child, mouse->pt, g_dragOrigin, g_dragOriginCore, 0, false });
       return 1;
     }
   } else if (message == WM_MOUSEMOVE) {
@@ -108,14 +122,41 @@ LRESULT CALLBACK CoreDragMouseHook(int code, WPARAM message, LPARAM data) {
       if (!g_dragEvents.empty() && g_dragEvents.back().child == g_draggingChild && g_dragEvents.back().phase == 1) {
         g_dragEvents.back().point = mouse->pt;
       } else {
-        g_dragEvents.push_back({ g_draggingChild, mouse->pt, g_dragOrigin, 1 });
+        g_dragEvents.push_back({ g_draggingChild, mouse->pt, g_dragOrigin, g_dragOriginCore, 1, false });
       }
     }
   } else if (message == WM_RBUTTONUP) {
     std::lock_guard<std::mutex> lock(g_dragMutex);
     if (g_draggingChild) {
-      g_dragEvents.push_back({ g_draggingChild, mouse->pt, g_dragOrigin, 2 });
+      g_dragEvents.push_back({ g_draggingChild, mouse->pt, g_dragOrigin, g_dragOriginCore, 2, false });
       g_draggingChild = nullptr;
+      g_dragOriginCore = {};
+      return 1;
+    }
+  } else if (message == WM_LBUTTONDOWN) {
+    if (!IsDesktopForegroundWindow()) return CallNextHookEx(g_mouseHook, code, message, data);
+    bool handled = false;
+    {
+      std::lock_guard<std::mutex> lock(g_dragMutex);
+      if (!g_draggingChild && !g_mascotClickingChild) {
+        for (const auto& area : g_mascotClickAreas) {
+          if (!area.active) continue;
+          const double dx = static_cast<double>(mouse->pt.x - area.center.x);
+          const double dy = static_cast<double>(mouse->pt.y - area.center.y);
+          if (dx * dx + dy * dy > area.radius * area.radius) continue;
+          if (HasDesktopIconAtPoint(area.iconView, mouse->pt)) break;
+          g_mascotClickingChild = area.child;
+          g_dragEvents.push_back({ area.child, mouse->pt, mouse->pt, {}, 0, true });
+          handled = true;
+          break;
+        }
+      }
+    }
+    if (handled) return 1;
+  } else if (message == WM_LBUTTONUP) {
+    std::lock_guard<std::mutex> lock(g_dragMutex);
+    if (g_mascotClickingChild) {
+      g_mascotClickingChild = nullptr;
       return 1;
     }
   }
@@ -136,9 +177,12 @@ void RemoveCoreDragHook() {
   if (g_mouseHook) UnhookWindowsHookEx(g_mouseHook);
   g_mouseHook = nullptr;
   g_dragAreas.clear();
+  g_mascotClickAreas.clear();
   g_dragEvents.clear();
   g_draggingChild = nullptr;
+  g_mascotClickingChild = nullptr;
   g_dragOrigin = {};
+  g_dragOriginCore = {};
 }
 
 bool IsWindowClass(HWND hwnd, const wchar_t* expected) {
@@ -308,13 +352,38 @@ Napi::Value SetCoreDragArea(const Napi::CallbackInfo& info) {
   return Napi::Boolean::New(env, true);
 }
 
+Napi::Value SetMascotClickArea(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 3 || !info[2].IsObject()) throw Napi::TypeError::New(env, "La zone de clic de la planète de divertissement est manquante.");
+  const HWND child = ReadHandle(info[0]);
+  const HWND iconView = ReadHandle(info[1]);
+  Napi::Object value = info[2].As<Napi::Object>();
+  const double x = value.Get("x").ToNumber().DoubleValue();
+  const double y = value.Get("y").ToNumber().DoubleValue();
+  const double radius = value.Get("radius").ToNumber().DoubleValue();
+  const bool active = value.Get("active").ToBoolean().Value();
+  if (!IsWindow(child) || !IsWindow(iconView) || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(radius) || radius < 0 || radius > 1000) {
+    throw Napi::RangeError::New(env, "La zone de clic de la planète de divertissement est invalide.");
+  }
+
+  std::lock_guard<std::mutex> lock(g_dragMutex);
+  const auto existing = std::find_if(g_mascotClickAreas.begin(), g_mascotClickAreas.end(), [child](const MascotClickArea& area) { return area.child == child; });
+  MascotClickArea area{ child, iconView, { static_cast<LONG>(std::lround(x)), static_cast<LONG>(std::lround(y)) }, radius, active };
+  if (existing == g_mascotClickAreas.end()) g_mascotClickAreas.push_back(area);
+  else *existing = area;
+  if (!InstallCoreDragHook()) throw Napi::Error::New(env, "Windows n’a pas pu activer le clic de la planète de divertissement.");
+  return Napi::Boolean::New(env, true);
+}
+
 Napi::Value RemoveCoreDragArea(const Napi::CallbackInfo& info) {
   if (info.Length() < 1) throw Napi::TypeError::New(info.Env(), "Fenêtre du widget manquante.");
   const HWND child = ReadHandle(info[0]);
   std::lock_guard<std::mutex> lock(g_dragMutex);
   g_dragAreas.erase(std::remove_if(g_dragAreas.begin(), g_dragAreas.end(), [child](const CoreDragArea& area) { return area.child == child; }), g_dragAreas.end());
-  if (g_draggingChild == child) { g_draggingChild = nullptr; g_dragOrigin = {}; }
-  if (g_dragAreas.empty() && g_mouseHook) {
+  g_mascotClickAreas.erase(std::remove_if(g_mascotClickAreas.begin(), g_mascotClickAreas.end(), [child](const MascotClickArea& area) { return area.child == child; }), g_mascotClickAreas.end());
+  if (g_draggingChild == child) { g_draggingChild = nullptr; g_dragOrigin = {}; g_dragOriginCore = {}; }
+  if (g_mascotClickingChild == child) g_mascotClickingChild = nullptr;
+  if (g_dragAreas.empty() && g_mascotClickAreas.empty() && g_mouseHook) {
     UnhookWindowsHookEx(g_mouseHook);
     g_mouseHook = nullptr;
     g_dragEvents.clear();
@@ -338,6 +407,9 @@ Napi::Value PollCoreDrag(const Napi::CallbackInfo& info) {
     item.Set("y", Napi::Number::New(env, event.point.y));
     item.Set("originX", Napi::Number::New(env, event.origin.x));
     item.Set("originY", Napi::Number::New(env, event.origin.y));
+    item.Set("coreOriginX", Napi::Number::New(env, event.coreOrigin.x));
+    item.Set("coreOriginY", Napi::Number::New(env, event.coreOrigin.y));
+    item.Set("kind", Napi::String::New(env, event.mascotClick ? "mascot-click" : "core-drag"));
     item.Set("phase", Napi::String::New(env, event.phase == 0 ? "start" : event.phase == 2 ? "end" : "move"));
     result.Set(index++, item);
   }
@@ -351,6 +423,7 @@ Napi::Object Initialize(Napi::Env env, Napi::Object exports) {
   exports.Set("getParentHandle", Napi::Function::New(env, GetParentHandle));
   exports.Set("isDesktopForeground", Napi::Function::New(env, IsDesktopForeground));
   exports.Set("setCoreDragArea", Napi::Function::New(env, SetCoreDragArea));
+  exports.Set("setMascotClickArea", Napi::Function::New(env, SetMascotClickArea));
   exports.Set("removeCoreDragArea", Napi::Function::New(env, RemoveCoreDragArea));
   exports.Set("pollCoreDrag", Napi::Function::New(env, PollCoreDrag));
   exports.Set("removeCoreDragHook", Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value { RemoveCoreDragHook(); return Napi::Boolean::New(info.Env(), true); }));
@@ -359,4 +432,3 @@ Napi::Object Initialize(Napi::Env env, Napi::Object exports) {
 }  // namespace
 
 NODE_API_MODULE(desktop_host, Initialize)
-
