@@ -202,6 +202,15 @@ ipcMain.on("qg:scene-position", (_event, position) => {
   } });
 });
 
+ipcMain.on("qg:scene-view", (_event, view) => {
+  if (!view || typeof view !== "object") return;
+  sendToParent({ type: "widget-view", payload: {
+    viewYaw: Number.isFinite(view.viewYaw) ? view.viewYaw : 0,
+    viewPitch: Number.isFinite(view.viewPitch) ? view.viewPitch : 0,
+    zoom: Number.isFinite(view.zoom) ? view.zoom : 1
+  } });
+});
+
 process.on("message", (message) => {
   if (!message || typeof message !== "object") return;
   if (message.type === "snapshot" && message.payload && typeof message.payload === "object") {

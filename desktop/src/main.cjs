@@ -88,6 +88,13 @@ if (process.argv.includes("--qg-ambient-host")) {
     const position = next.widgetPosition && typeof next.widgetPosition === "object" ? next.widgetPosition : null;
     const widgetPosition = position && Number.isFinite(position.x) && Number.isFinite(position.y)
       ? { x: Math.max(0.07, Math.min(0.93, Number(position.x))), y: Math.max(0.09, Math.min(0.91, Number(position.y))) } : null;
+    const rawWidgetView = next.widgetView && typeof next.widgetView === "object" ? next.widgetView : null;
+    const bounded = (value, low, high, fallback) => Number.isFinite(Number(value)) ? Math.max(low, Math.min(high, Number(value))) : fallback;
+    const widgetView = rawWidgetView ? {
+      viewYaw: ((bounded(rawWidgetView.viewYaw, 0, Math.PI * 2, 0) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2),
+      viewPitch: bounded(rawWidgetView.viewPitch, -1.15, 1.15, 0),
+      zoom: bounded(rawWidgetView.zoom, 0.65, 2.25, 1)
+    } : null;
     return {
       side: next.side === "left" ? "left" : "right",
       opacity: Math.max(0.25, Math.min(1, Number(next.opacity) || 0.82)),
@@ -95,7 +102,8 @@ if (process.argv.includes("--qg-ambient-host")) {
       fieldEnabled: next.fieldEnabled !== false,
       startWithWindows: Boolean(next.startWithWindows),
       panelBounds: validBounds,
-      widgetPosition
+      widgetPosition,
+      widgetView
     };
   }
 
@@ -184,6 +192,9 @@ if (process.argv.includes("--qg-ambient-host")) {
       speed: bounded(raw.speed, 0.2, 1.8, 0.72),
       stars: Math.round(bounded(raw.stars, 12, 64, 30)),
       showOrbits: raw.showOrbits !== false,
+      viewYaw: bounded(raw.viewYaw, 0, Math.PI * 2, 0),
+      viewPitch: bounded(raw.viewPitch, -1.15, 1.15, 0),
+      zoom: bounded(raw.zoom, 0.65, 2.25, 1),
       center: { x: bounded(center.x, 0.08, 0.92, 0.5), y: bounded(center.y, 0.1, 0.9, 0.53) }
     };
     return { subjects, tasks, visual, savedAt: Number(value.savedAt) || Date.now() };
@@ -193,7 +204,7 @@ if (process.argv.includes("--qg-ambient-host")) {
     return {
       subjects: siteSync.subjects,
       tasks: siteSync.tasks,
-      settings: { ...settings, visual: siteSync.visual, widgetPosition: settings.widgetPosition || siteSync.visual?.center || null }
+      settings: { ...settings, visual: settings.widgetView ? { ...siteSync.visual, ...settings.widgetView } : siteSync.visual, widgetPosition: settings.widgetPosition || siteSync.visual?.center || null }
     };
   }
 
@@ -296,6 +307,11 @@ if (process.argv.includes("--qg-ambient-host")) {
       if (message.type === "widget-position" && message.payload && Number.isFinite(message.payload.x) && Number.isFinite(message.payload.y)) {
         settings = cleanSettings({ ...settings, widgetPosition: message.payload });
         queueSettingsWrite().catch((error) => console.error("Widget position save failed:", error.message));
+        syncViews();
+      }
+      if (message.type === "widget-view" && message.payload && typeof message.payload === "object") {
+        settings = cleanSettings({ ...settings, widgetView: message.payload });
+        queueSettingsWrite().catch((error) => console.error("Widget view save failed:", error.message));
         syncViews();
       }
       if (message.type === "shell-unavailable" || message.type === "attach-error" || message.type === "shell-error") {

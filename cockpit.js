@@ -23,7 +23,7 @@
     { id: "admin", name: "Administration", description: "", color: "#c6ff55", size: 1, durationMinutes: 20 },
     { id: "personal", name: "Personnel", description: "", color: "#ad7bff", size: 1, durationMinutes: 25 }
   ];
-  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, showOrbits: true, center: { x: 0.5, y: 0.53 } };
+  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, showOrbits: true, center: { x: 0.5, y: 0.53 }, viewYaw: 0, viewPitch: 0, zoom: 1 };
   const DEFAULT_STATE = { version: 1, view: "tasks", taskFilter: "open", panelCollapsed: false, subjects: DEFAULT_SUBJECTS.map((item) => ({ ...item })), tasks: [], visual: structuredClone(DEFAULT_VISUAL), lastSync: 0 };
 
   function cleanSubject(value) {
@@ -83,7 +83,10 @@
       speed: clamp(source.speed ?? DEFAULT_VISUAL.speed, 0.2, 1.8),
       stars: Math.round(clamp(source.stars ?? DEFAULT_VISUAL.stars, 12, 64)),
       showOrbits: source.showOrbits !== false,
-      center: { x: clamp(center.x ?? 0.5, 0.08, 0.92), y: clamp(center.y ?? 0.53, 0.1, 0.9) }
+      center: { x: clamp(center.x ?? 0.5, 0.08, 0.92), y: clamp(center.y ?? 0.53, 0.1, 0.9) },
+      viewYaw: ((Number(source.viewYaw) || 0) % TAU + TAU) % TAU,
+      viewPitch: clamp(source.viewPitch ?? 0, -1.15, 1.15),
+      zoom: clamp(source.zoom ?? 1, 0.65, 2.25)
     };
   }
 
@@ -106,6 +109,8 @@
   let inputCapture = false;
   let draggingCore = false;
   let dragPointerId = null;
+  let viewDrag = null;
+  let touchGesture = null;
   let coreCurrent = { ...data.visual.center };
   let coreTarget = { ...data.visual.center };
   let coreHit = { x: 0, y: 0, radius: 0 };
@@ -478,13 +483,13 @@
 
   function coreGeometry() {
     const center = coreCurrent;
-    const radius = clamp(Math.min(width, height) * 0.046, 30, 62) * data.visual.planetScale;
+    const radius = clamp(Math.min(width, height) * 0.046, 30, 62) * data.visual.planetScale * data.visual.zoom;
     return { x: width * center.x, y: height * center.y, radius };
   }
 
   function projectScenePoint(cx, cy, x, y, z, timestamp) {
-    const yaw = 0.14 * Math.sin(timestamp * 0.000035);
-    const pitch = 0.48 + 0.035 * Math.sin(timestamp * 0.000021);
+    const yaw = 0.14 * Math.sin(timestamp * 0.000035) + data.visual.viewYaw;
+    const pitch = 0.48 + 0.035 * Math.sin(timestamp * 0.000021) + data.visual.viewPitch;
     const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw);
     const rotatedX = x * cosYaw + z * sinYaw;
     const rotatedZ = -x * sinYaw + z * cosYaw;
@@ -523,7 +528,7 @@
     const span = Math.min(width, height);
     const colors = ["#a8baff", "#90f4e6", "#f0a7e7"];
     for (let index = 0; index < 3; index++) {
-      const radius = span * (0.43 + index * 0.13);
+      const radius = span * (0.43 + index * 0.13) * data.visual.zoom;
       const inclination = [0.82, 1.12, 0.48][index];
       const nodeAngle = index * 1.17 - 0.34;
       drawProjectedOrbit(core, radius, inclination, nodeAngle, colors[index], 0.052 - index * 0.008, timestamp);
@@ -616,8 +621,8 @@
     const phase = taskPhase(task, wallTime);
     const progress = phase === "running" ? taskProgress(task, wallTime) : phase === "elapsed" ? 1 : 0;
     const orbitIndex = index + 1;
-    const outer = Math.min(Math.min(width, height) * .44, core.radius + 84 + (orbitIndex % 4) * 34);
-    const orbit = core.radius + 22 + (outer - core.radius - 22) * (1 - Math.pow(progress, 1.38));
+    const outer = Math.min(Math.min(width, height) * .44 * data.visual.zoom, core.radius + (84 + (orbitIndex % 4) * 34) * data.visual.zoom);
+    const orbit = core.radius + 22 * data.visual.zoom + (outer - core.radius - 22 * data.visual.zoom) * (1 - Math.pow(progress, 1.38));
     const direction = index % 2 ? -1 : 1;
     const speed = .00013 * data.visual.speed * (motionPreference === "reduced" ? 0.45 : 1) * (1 + index * .055) * direction;
     const angle = (index * 2.399963) + (task.startedAt || task.createdAt) * .000002 + timestamp * speed;
@@ -629,7 +634,7 @@
     const heartbeatScale = motionPreference === "reduced" ? 0.5 : 1;
     const heartbeat = urgency > .72 ? 1 + .055 * heartbeatScale * Math.sin(timestamp * .0085) : 1 + .018 * heartbeatScale * Math.sin(timestamp * .0022 + index);
     const subjectSize = task.planetSize || subject?.size || 1;
-    const radius = clamp((10 + Math.min(5, subjectSize * 3)) * data.visual.planetScale * subjectSize, 7, 27) * heartbeat * position.scale;
+    const radius = clamp((10 + Math.min(5, subjectSize * 3)) * data.visual.planetScale * subjectSize, 7, 27) * heartbeat * position.scale * data.visual.zoom;
     const ageAfter = taskDeadline(task) ? wallTime - taskDeadline(task) : 0;
     const absorbing = phase === "elapsed" && ageAfter >= 0 && ageAfter < 1750;
     const fade = absorbing ? 1 - ageAfter / 1750 : phase === "elapsed" ? 0 : 1;
@@ -690,8 +695,8 @@
       .sort((a, b) => Number(b.phase === "elapsed") - Number(a.phase === "elapsed") || (a.progress - b.progress));
     const rear = ordered.filter(({ task, index, phase }) => {
       const progress = phase === "running" ? taskProgress(task, wallTime) : phase === "elapsed" ? 1 : 0;
-      const outer = Math.min(Math.min(width, height) * .44, core.radius + 84 + ((index + 1) % 4) * 34);
-      const orbit = core.radius + 22 + (outer - core.radius - 22) * (1 - Math.pow(progress, 1.38));
+      const outer = Math.min(Math.min(width, height) * .44 * data.visual.zoom, core.radius + (84 + ((index + 1) % 4) * 34) * data.visual.zoom);
+      const orbit = core.radius + 22 * data.visual.zoom + (outer - core.radius - 22 * data.visual.zoom) * (1 - Math.pow(progress, 1.38));
       const direction = index % 2 ? -1 : 1;
       const speed = .00013 * data.visual.speed * (motionPreference === "reduced" ? 0.45 : 1) * (1 + index * .055) * direction;
       const angle = index * 2.399963 + (task.startedAt || task.createdAt) * .000002 + timestamp * speed;
@@ -724,13 +729,14 @@
 
   function nearCore(point, padding = 9) { return Math.hypot(point.x - coreHit.x, point.y - coreHit.y) <= coreHit.radius + padding; }
 
-  function setCenterFromPointer(event) {
-    const point = pointerPoint(event);
+  function setCenterFromPoint(point) {
     coreTarget = { x: clamp(point.x / width, 0.07, 0.93), y: clamp(point.y / height, 0.09, 0.91) };
     data.visual.center = { ...coreTarget };
     if (!DESKTOP_WIDGET) save();
     lastPositionSent = now();
   }
+
+  function setCenterFromPointer(event) { setCenterFromPoint(pointerPoint(event)); }
 
   function finishDrag() {
     if (!draggingCore) return;
@@ -742,8 +748,109 @@
     dragPointerId = null;
   }
 
+  function wrapAngle(value) { return ((value % TAU) + TAU) % TAU; }
+
+  function saveViewGesture() {
+    if (DESKTOP_WIDGET) {
+      window.qgScene?.saveWidgetView?.({ viewYaw: data.visual.viewYaw, viewPitch: data.visual.viewPitch, zoom: data.visual.zoom });
+      window.qgScene?.saveWidgetPosition?.({ ...data.visual.center });
+    } else save();
+  }
+
+  function applyViewDrag(start, point) {
+    const dx = point.x - start.x, dy = point.y - start.y;
+    if (Math.hypot(dx, dy) > 4) start.moved = true;
+    if (!start.moved) return;
+    data.visual.viewYaw = wrapAngle(start.viewYaw + dx / Math.max(1, width) * TAU);
+    data.visual.viewPitch = clamp(start.viewPitch - dy / Math.max(1, height) * 1.5, -1.15, 1.15);
+  }
+
+  function pointFromTouch(touch) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+  }
+
+  function beginTouchGesture(event) {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("button,input,select,textarea,a,summary,[data-action]")) return;
+    if (event.touches.length >= 2) {
+      const [first, second] = [event.touches[0], event.touches[1]].map(pointFromTouch);
+      touchGesture = {
+        mode: "pinch", identifiers: [event.touches[0].identifier, event.touches[1].identifier],
+        center: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+        distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)),
+        startCenter: { ...data.visual.center }, startZoom: data.visual.zoom, moved: false
+      };
+      event.preventDefault();
+      return;
+    }
+    if (event.touches.length === 1 && (event.target === canvas || DESKTOP_WIDGET)) {
+      const touch = event.touches[0], point = pointFromTouch(touch);
+      touchGesture = {
+        mode: "rotate", identifier: touch.identifier, x: point.x, y: point.y,
+        viewYaw: data.visual.viewYaw, viewPitch: data.visual.viewPitch,
+        startOnCore: nearCore(point, 3), moved: false
+      };
+    }
+  }
+
+  function moveTouchGesture(event) {
+    const gesture = touchGesture;
+    if (!gesture) return;
+    if (gesture.mode === "pinch") {
+      const firstTouch = [...event.touches].find((touch) => touch.identifier === gesture.identifiers[0]);
+      const secondTouch = [...event.touches].find((touch) => touch.identifier === gesture.identifiers[1]);
+      if (!firstTouch || !secondTouch) return;
+      const first = pointFromTouch(firstTouch), second = pointFromTouch(secondTouch);
+      const center = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+      const distance = Math.max(1, Math.hypot(first.x - second.x, first.y - second.y));
+      const dx = center.x - gesture.center.x, dy = center.y - gesture.center.y;
+      if (Math.abs(distance - gesture.distance) > 4 || Math.hypot(dx, dy) > 4) gesture.moved = true;
+      if (gesture.moved) {
+        data.visual.zoom = clamp(gesture.startZoom * distance / gesture.distance, 0.65, 2.25);
+        data.visual.center = {
+          x: clamp(gesture.startCenter.x + dx / Math.max(1, width), 0.07, 0.93),
+          y: clamp(gesture.startCenter.y + dy / Math.max(1, height), 0.09, 0.91)
+        };
+        coreTarget = { ...data.visual.center };
+      }
+      event.preventDefault();
+      return;
+    }
+    const touch = [...event.touches].find((item) => item.identifier === gesture.identifier);
+    if (touch) {
+      applyViewDrag(gesture, pointFromTouch(touch));
+      event.preventDefault();
+    }
+  }
+
+  function finishTouchGesture(event) {
+    if (!touchGesture) return;
+    if (event.touches.length > 0) {
+      if (touchGesture.mode === "pinch" && touchGesture.moved) saveViewGesture();
+      touchGesture = null;
+      return;
+    }
+    const finished = touchGesture;
+    touchGesture = null;
+    if (finished.moved) saveViewGesture();
+    else if (finished.mode === "rotate" && finished.startOnCore && !DESKTOP_WIDGET) openFocusDialog();
+    if (DESKTOP_WIDGET) setWidgetInput(false);
+  }
+
+  function finishViewDrag(pointerId) {
+    if (!viewDrag || viewDrag.pointerId !== pointerId) return;
+    const finished = viewDrag;
+    viewDrag = null;
+    if (finished.moved) saveViewGesture();
+    else if (finished.startOnCore && !DESKTOP_WIDGET) openFocusDialog();
+    if (DESKTOP_WIDGET) setWidgetInput(false);
+  }
+
   canvas.addEventListener("pointermove", (event) => {
     const point = pointerPoint(event);
+    if (event.pointerType === "touch") return;
+    if (viewDrag && event.pointerId === viewDrag.pointerId) { applyViewDrag(viewDrag, point); return; }
     if (!draggingCore) {
       if (DESKTOP_WIDGET) setWidgetInput(nearCore(point, 13));
       return;
@@ -753,6 +860,7 @@
   });
   canvas.addEventListener("pointerdown", (event) => {
     const point = pointerPoint(event);
+    if (event.pointerType === "touch") return;
     if (nearCore(point, 3) && event.button === 2) {
       draggingCore = true; dragPointerId = event.pointerId;
       try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
@@ -760,13 +868,34 @@
       if (DESKTOP_WIDGET) setWidgetInput(true);
       return;
     }
-    if (!DESKTOP_WIDGET && event.button === 0 && nearCore(point, 3)) { openFocusDialog(); event.preventDefault(); }
+    if (event.button === 0 && (!DESKTOP_WIDGET || nearCore(point, 13))) {
+      viewDrag = { pointerId: event.pointerId, x: point.x, y: point.y, viewYaw: data.visual.viewYaw, viewPitch: data.visual.viewPitch, startOnCore: nearCore(point, 3), moved: false };
+      try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
+      if (DESKTOP_WIDGET) setWidgetInput(true);
+      event.preventDefault();
+    }
   });
-  canvas.addEventListener("pointerup", (event) => { if (event.pointerId === dragPointerId) finishDrag(); });
-  canvas.addEventListener("pointercancel", finishDrag);
-  canvas.addEventListener("lostpointercapture", finishDrag);
+  canvas.addEventListener("pointerup", (event) => {
+    if (event.pointerType === "touch") return;
+    if (event.pointerId === dragPointerId) finishDrag();
+    finishViewDrag(event.pointerId);
+  });
+  canvas.addEventListener("pointercancel", (event) => {
+    if (event.pointerType === "touch") return;
+    if (event.pointerId === dragPointerId) finishDrag();
+    finishViewDrag(event.pointerId);
+  });
+  canvas.addEventListener("lostpointercapture", (event) => {
+    if (event.pointerType === "touch") return;
+    if (event.pointerId === dragPointerId) finishDrag();
+    finishViewDrag(event.pointerId);
+  });
   canvas.addEventListener("contextmenu", (event) => { if (nearCore(pointerPoint(event), 5)) event.preventDefault(); });
-  canvas.addEventListener("pointerleave", () => { if (!draggingCore && DESKTOP_WIDGET) setWidgetInput(false); });
+  canvas.addEventListener("pointerleave", () => { if (!draggingCore && !viewDrag && !touchGesture && DESKTOP_WIDGET) setWidgetInput(false); });
+  document.addEventListener("touchstart", beginTouchGesture, { passive: false, capture: true });
+  document.addEventListener("touchmove", moveTouchGesture, { passive: false, capture: true });
+  document.addEventListener("touchend", finishTouchGesture, { passive: false, capture: true });
+  document.addEventListener("touchcancel", finishTouchGesture, { passive: false, capture: true });
 
   byId("panelContent").addEventListener("click", (event) => { const button = event.target.closest("[data-action]"); if (button) handleAction(button); });
   byId("panelContent").addEventListener("input", handleInput);
