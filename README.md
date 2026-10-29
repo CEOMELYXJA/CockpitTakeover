@@ -25,4 +25,4 @@ Sur le bureau, seule la planète centrale est interactive : maintenez le clic dr
 
 Téléchargez l’application depuis les [versions Windows](https://github.com/CEOMELYXJA/CockpitTakeover/releases/latest). Elle installe un seul raccourci **DumbFuckCockpit Widget** sur le Bureau et ne crée pas de dossier **Trinity**. Ses réglages d’opacité, de mouvement, d’affichage et de démarrage avec Windows restent enregistrés après fermeture.
 
-Le widget est fourni sous forme de paquet Windows généré par GitHub Actions. Une nouvelle version de l’application est publiée à chaque mise à jour du paquet; les mises à jour visuelles du site sont synchronisées avec le widget par le bouton du site.
+Le widget est fourni sous forme de paquet Windows généré par GitHub Actions. Le bouton du site transmet les rappels, les sujets et les réglages graphiques. Une nouvelle version du programme ou de son rendu doit être installée avec le nouvel installateur Windows. Ces choix et données personnelles restent sur votre ordinateur.
