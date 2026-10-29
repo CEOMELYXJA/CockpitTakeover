@@ -1,30 +1,17 @@
 # Widget Windows Cockpit Takeover
 
-## Installer le widget
+## Installer
 
-1. Téléchargez l’installateur Windows depuis les [versions Cockpit Takeover](https://github.com/CEOMELYXJA/CockpitTakeover/releases/latest) et enregistrez-le dans **Téléchargements**.
-2. Double-cliquez sur l’installateur. Il crée un raccourci **DumbFuckCockpit Widget** sur le Bureau et lance le widget.
-3. Le widget apparaît sur vos écrans derrière les icônes. Vous pouvez fermer le site après synchronisation.
-
-L’application installe ses fichiers dans le dossier Windows prévu pour les applications. Elle ne crée pas de dossier **Trinity** ni de dossier de fonctionnement sur le Bureau.
-
-## Site et widget
-
-- Le [site Cockpit Takeover](https://ceomelyxja.github.io/CockpitTakeover/) est l’espace principal pour créer et modifier vos planètes.
-- Dans l’unique menu **Mes planètes**, chaque planète contient son action, son sujet, sa couleur, sa taille, sa durée, ses détails et ses notes. Les réglages généraux sont regroupés sous **Réglages de la carte** dans ce même menu.
-- Cliquez sur **Synchroniser le widget** pour transmettre la carte. Le fichier est placé dans **Téléchargements**; l’application le détecte automatiquement et conserve sa dernière copie localement.
-- Vous n’avez pas besoin de laisser le site ouvert. Les données personnelles ne sont pas publiées sur GitHub.
+1. Téléchargez l’installateur depuis les [versions Windows Cockpit Takeover](https://github.com/CEOMELYXJA/CockpitTakeover/releases/latest) et enregistrez-le dans **Téléchargements**.
+2. Double-cliquez sur l’installateur. Il crée le raccourci **DumbFuckCockpit Widget** sur le Bureau et ouvre le widget transparent.
+3. Le widget apparaît derrière les icônes Windows. Il garde sa dernière carte synchronisée même lorsque le site est fermé.
 
 ## Utiliser la carte
 
-Un rappel démarré devient une planète. À mesure que le délai s’écoule, elle se rapproche du centre. Juste avant la fin, sa pulsation s’accentue légèrement; elle rejoint ensuite le centre et disparaît du widget. Elle reste toutefois ouverte dans le site jusqu’à ce que vous la terminiez.
+Le site [Cockpit Takeover](https://ceomelyxja.github.io/CockpitTakeover/) sert à créer les planètes et à ajuster les réglages orbitaux. Une planète peut représenter un appel, une commission, une rencontre, un problème, une activité, un projet, un objectif ou toute autre chose. Son échéance comprend une date et une heure; couleur, taille et anneaux sont réglables planète par planète.
 
-Sur le Bureau, maintenez le clic droit sur la planète centrale et déplacez-la. La carte entière suit avec douceur. Les autres planètes ne prennent pas les clics; les icônes Windows restent au premier plan.
+Après vos changements, cliquez sur **Synchroniser le widget**. Si le widget est ouvert, il récupère automatiquement la copie depuis **Téléchargements**; aucune importation manuelle n’est nécessaire. Les données personnelles demeurent sur votre ordinateur.
 
-Le panneau Windows garde les réglages d’opacité, de mouvement, d’affichage et de lancement avec Windows. Il permet aussi de recentrer le widget et conserve les préférences après fermeture.
+Sur le Bureau, maintenez le clic droit sur le noyau central et déplacez-le. La carte entière suit avec fluidité. Les autres planètes ne prennent pas les clics; les icônes restent au premier plan.
 
-## Mise à jour
-
-Installez une nouvelle version Windows lorsque l’application elle-même a été mise à jour. Les réglages locaux et la dernière carte synchronisée sont conservés.
-
-Compatible avec Windows 10 et Windows 11. L’installateur n’est pas signé; Windows peut afficher un avertissement d’éditeur non vérifié.
+Les options Windows d’opacité, de mouvement et de démarrage restent enregistrées après fermeture. Une mise à jour du widget s’installe en téléchargeant la nouvelle version; la carte déjà synchronisée est conservée.

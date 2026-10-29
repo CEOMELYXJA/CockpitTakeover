@@ -2,14 +2,14 @@
   "id": "./",
   "name": "Cockpit Takeover — espace de travail",
   "short_name": "Cockpit Takeover",
-  "description": "Une carte orbitale de rappels clairs, personnalisable et synchronisable avec le widget Windows.",
+  "description": "Une carte orbitale personnalisable pour tous vos projets, activités et échéances.",
   "lang": "fr-CA",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#050505",
-  "theme_color": "#050505",
+  "background_color": "#050812",
+  "theme_color": "#050812",
   "icons": [
     {
       "src": "./icon.svg",

@@ -127,15 +127,18 @@ if (process.argv.includes("--qg-ambient-host")) {
     if (!value || value.format !== "cockpittakeover-widget-sync" || value.version !== 1 || !Array.isArray(value.subjects) || !Array.isArray(value.tasks) || value.subjects.length > 24 || value.tasks.length > 500) {
       throw new Error("Le fichier ne correspond pas à une synchronisation Cockpit Takeover valide.");
     }
-    const oldDefaultColors = { work: "#9bb7ac", home: "#b89e79", care: "#9eafc1", create: "#c08f8b", admin: "#b7aa83", personal: "#aa9bb7" };
-    const newDefaultColors = { work: "#b18b5e", home: "#98856c", care: "#858b91", create: "#9a6f64", admin: "#a49b81", personal: "#887968" };
+    const legacyColors = {
+      "#b18b5e": "#42dcff", "#98856c": "#ff4fc8", "#858b91": "#a8ff4f", "#9a6f64": "#ffc94a", "#a49b81": "#8b79ff", "#887968": "#4bffd7",
+      "#9bb7ac": "#42dcff", "#b89e79": "#ffb348", "#9eafc1": "#7aa7ff", "#c08f8b": "#ff4fc8", "#b7aa83": "#c6ff55", "#aa9bb7": "#ad7bff"
+    };
+    const cleanColor = (value, fallback) => /^#[0-9a-fA-F]{6}$/.test(value) ? (legacyColors[value.toLowerCase()] || value.toLowerCase()) : fallback;
     const subjects = value.subjects.map((entry) => {
       const item = entry && typeof entry === "object" ? entry : {};
       const id = safeText(item.id, 60);
       if (!/^[a-zA-Z0-9_-]{1,60}$/.test(id)) throw new Error("Un sujet contient un identifiant invalide.");
       return {
         id, name: safeText(item.name, 48) || "Sujet sans nom", description: safeText(item.description, 260),
-        color: /^#[0-9a-fA-F]{6}$/.test(item.color) ? (oldDefaultColors[item.id] === item.color.toLowerCase() ? newDefaultColors[item.id] : item.color) : "#b18b5e",
+        color: cleanColor(item.color, "#42dcff"),
         size: Math.max(0.55, Math.min(1.65, Number(item.size) || 1)),
         durationMinutes: Math.max(5, Math.min(1440, Number(item.durationMinutes) || 25))
       };
@@ -149,14 +152,22 @@ if (process.argv.includes("--qg-ambient-host")) {
       const duration = Number(item.durationMinutes);
       const startedAt = Number(item.startedAt);
       const createdAt = Number(item.createdAt);
+      const hasDeadlineField = Object.prototype.hasOwnProperty.call(item, "deadlineAt");
+      const rawDeadline = item.deadlineAt;
+      const parsedDeadline = Number(rawDeadline) || (rawDeadline ? Date.parse(rawDeadline) : null);
+      const deadlineAt = Number.isFinite(parsedDeadline) && parsedDeadline > 0 ? parsedDeadline : (hasDeadlineField ? null : startedAt > 0 ? startedAt + (Number.isFinite(duration) ? Math.max(5, Math.min(1440, duration)) : 25) * 60_000 : null);
       return {
         id, title: safeText(item.title, 180), description: safeText(item.description, 700),
         subjectId: subjectIds.has(item.subjectId) ? item.subjectId : null,
         topicName: safeText(item.topicName || legacySubject?.name, 48),
-        planetColor: /^#[0-9a-fA-F]{6}$/.test(item.planetColor || item.color) ? (item.planetColor || item.color) : (legacySubject?.color || "#b18b5e"),
+        planetColor: cleanColor(item.planetColor || item.color, legacySubject?.color || "#42dcff"),
         planetSize: Number.isFinite(Number(item.planetSize)) ? Math.max(0.55, Math.min(1.65, Number(item.planetSize))) : (legacySubject?.size || 1),
+        ringCount: Math.round(Math.max(0, Math.min(5, Number(item.ringCount ?? 1) || 0))),
+        ringsGlow: item.ringsGlow !== false,
+        ringsRocky: Boolean(item.ringsRocky),
         status: ["queued", "active", "done", "archived"].includes(item.status) ? item.status : "queued",
         durationMinutes: Number.isFinite(duration) ? Math.max(5, Math.min(1440, duration)) : 25,
+        deadlineAt,
         priority: [1, 2, 3].includes(Number(item.priority)) ? Number(item.priority) : 2,
         createdAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : Date.now(),
         startedAt: Number.isFinite(startedAt) && startedAt > 0 ? startedAt : null,
