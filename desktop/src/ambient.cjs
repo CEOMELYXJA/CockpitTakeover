@@ -11,7 +11,7 @@ if (profile) {
 }
 
 let nativeHost = null;
-let snapshot = { categories: [], tasks: [], settings: { side: "right", opacity: 0.82, motion: "measured" } };
+let snapshot = { categories: [], tasks: [], settings: { side: "right", displayMode: "both", opacity: 0.82, motion: "measured" } };
 let scenes = [];
 let receivedSnapshot = false;
 let lastUnavailableNotice = 0;
@@ -54,6 +54,15 @@ function widgetBounds(display) {
   return { ...display.bounds };
 }
 
+function selectedDisplays() {
+  const displays = screen.getAllDisplays().slice().sort((a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y);
+  if (displays.length < 2) return displays;
+  const mode = snapshot.settings?.displayMode || "both";
+  if (mode === "left") return [displays[0]];
+  if (mode === "right") return [displays[displays.length - 1]];
+  return displays;
+}
+
 function physicalDisplayBounds(display) {
   const hostBounds = scenes.find((window) => window.__qgDisplayId === display.id)?.__qgHostBounds
     || chooseHost(cachedHosts, display)?.bounds;
@@ -70,7 +79,7 @@ function physicalDisplayBounds(display) {
 }
 
 function physicalDesktopBounds() {
-  const displays = screen.getAllDisplays();
+  const displays = selectedDisplays();
   if (!displays.length) return { x: 0, y: 0, width: 1, height: 1 };
   const bounds = displays.map(physicalDisplayBounds);
   const left = Math.min(...bounds.map((item) => item.x));
@@ -94,8 +103,12 @@ function globalCorePosition() {
   if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
     return { x: bounds.x + saved.x * bounds.width, y: bounds.y + saved.y * bounds.height };
   }
+  const active = selectedDisplays();
   const primary = screen.getPrimaryDisplay();
-  const displayBounds = physicalDisplayBounds(primary);
+  const reference = snapshot.settings?.displayMode === "left" ? active[0]
+    : snapshot.settings?.displayMode === "right" ? active[active.length - 1]
+      : active.find((display) => display.id === primary.id) || active[0] || primary;
+  const displayBounds = physicalDisplayBounds(reference);
   const legacy = snapshot.settings?.widgetPosition || snapshot.settings?.visual?.center || { x: 0.5, y: 0.53 };
   const localX = Number.isFinite(legacy.x) ? legacy.x : 0.5;
   const localY = Number.isFinite(legacy.y) ? legacy.y : 0.53;
@@ -106,7 +119,7 @@ function globalCorePosition() {
 }
 
 function sceneWidgetPosition(window) {
-  const display = screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
+  const display = selectedDisplays().find((item) => item.id === window.__qgDisplayId);
   if (!display) return snapshot.settings?.widgetPosition || snapshot.settings?.visual?.center || { x: 0.5, y: 0.53 };
   const bounds = physicalDisplayBounds(display);
   const core = globalCorePosition();
@@ -184,7 +197,7 @@ function createScene(display, desktopHost) {
   window.webContents.once("did-finish-load", () => {
     try {
       if (!nativeHost) throw new Error("Le module Windows de la couche arrière n’est pas disponible.");
-      const currentDisplay = screen.getAllDisplays().find((item) => item.id === display.id) || display;
+       const currentDisplay = selectedDisplays().find((item) => item.id === display.id) || display;
       const currentBounds = widgetBounds(currentDisplay);
       window.__qgIconView = desktopHost.iconView;
       nativeHost.attachToDesktop(
@@ -211,7 +224,7 @@ function createScene(display, desktopHost) {
 
 function moveScenesInPlace() {
   if (!nativeHost || !scenes.length) return false;
-  const displays = screen.getAllDisplays();
+  const displays = selectedDisplays();
   try {
     for (const window of scenes) {
       if (window.isDestroyed() || !window.__qgAttached) continue;
@@ -244,7 +257,7 @@ function rebuildScenes() {
     return;
   }
   let created = 0;
-  for (const display of screen.getAllDisplays()) {
+  for (const display of selectedDisplays()) {
     const host = chooseHost(hosts, display);
     if (host) { createScene(display, host); created++; }
   }
@@ -280,7 +293,7 @@ ipcMain.on("qg:scene-hit-area", (event, area) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   if (!window || window.isDestroyed() || !window.__qgAttached || !area || !nativeHost?.setCoreDragArea) return;
   if (![area.x, area.y, area.radius].every(Number.isFinite)) return;
-  const display = screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
+  const display = selectedDisplays().find((item) => item.id === window.__qgDisplayId);
   if (!display) return;
   const scale = display.scaleFactor || 1;
   const bounds = physicalDisplayBounds(display);
@@ -299,7 +312,7 @@ ipcMain.on("qg:scene-mascot-area", (event, area) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   if (!window || window.isDestroyed() || !window.__qgAttached || !area || !nativeHost?.setMascotClickArea) return;
   if (![area.x, area.y, area.radius].every(Number.isFinite)) return;
-  const display = screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
+  const display = selectedDisplays().find((item) => item.id === window.__qgDisplayId);
   if (!display) return;
   const scale = display.scaleFactor || 1;
   const bounds = physicalDisplayBounds(display);
@@ -318,7 +331,7 @@ ipcMain.on("qg:scene-mascot-area", (event, area) => {
 ipcMain.on("qg:scene-position", (_event, position) => {
   if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
   const window = BrowserWindow.fromWebContents(_event.sender);
-  const display = window && screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
+  const display = window && selectedDisplays().find((item) => item.id === window.__qgDisplayId);
   if (!display) return;
   const bounds = physicalDisplayBounds(display);
   const normalized = normalizedDesktopPoint(
@@ -362,12 +375,7 @@ function pollCoreDrag() {
       continue;
     }
     if (![drag.x, drag.y, drag.originX, drag.originY, drag.coreOriginX, drag.coreOriginY].every(Number.isFinite)) continue;
-    const deltaX = drag.x - drag.originX;
-    const deltaY = drag.y - drag.originY;
-    const nextPosition = normalizedDesktopPoint(
-      drag.coreOriginX + deltaX,
-      drag.coreOriginY + deltaY
-    );
+    const nextPosition = normalizedDesktopPoint(drag.x, drag.y);
     snapshot.settings = { ...snapshot.settings, widgetDesktopPosition: nextPosition };
     broadcastWidgetPosition();
     if (drag.phase === "end") sendToParent({ type: "widget-position", payload: nextPosition });
@@ -378,9 +386,11 @@ process.on("message", (message) => {
   if (!message || typeof message !== "object") return;
   if (message.type === "snapshot" && message.payload && typeof message.payload === "object") {
     const previousSide = snapshot.settings?.side;
+    const previousDisplayMode = snapshot.settings?.displayMode || "both";
     snapshot = message.payload;
     receivedSnapshot = true;
     if (snapshot.settings?.fieldEnabled === false || !scenes.length) rebuildScenes();
+    else if (previousDisplayMode !== (snapshot.settings?.displayMode || "both")) rebuildScenes();
     else if (previousSide !== snapshot.settings?.side) {
       if (moveScenesInPlace()) {
         broadcastState();

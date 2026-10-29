@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050812">
+  <meta name="description" content="Une carte orbitale vivante pour vos projets, activités, rencontres, appels, commissions et échéances.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./cockpit.css">
+  <link rel="stylesheet" href="./pinball.css">
+  <script>if(new URLSearchParams(location.search).get("desktopWidget")==="1")document.documentElement.classList.add("desktop-widget")</script>
+  <title>Cockpit Takeover — Votre espace en mouvement</title>
+</head>
+<body>
+  <canvas id="universeCanvas" aria-hidden="true"></canvas>
+  <div class="app-shell" id="appShell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Cockpit Takeover — vue orbitale">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><b>COCKPIT</b><small>ESPACE ORBITAL</small></span>
+      </a>
+      <button id="mobileMenuToggle" class="mobile-menu" type="button" aria-controls="mainNav" aria-expanded="false" aria-label="Ouvrir la navigation">☰</button>
+      <nav id="mainNav" class="main-nav" aria-label="Espace du cockpit">
+        <button type="button" data-view="tasks" class="nav-button is-active">Planètes</button>
+        <button type="button" data-view="settings" class="nav-button">Réglages</button>
+        <button id="panelClose" class="nav-button panel-toggle" type="button" aria-label="Réduire le panneau" title="Réduire le panneau">⌃</button>
+      </nav>
+      <div class="top-actions">
+        <span id="syncBadge" class="sync-badge" aria-live="polite">Widget non synchronisé</span>
+        <button id="syncWidget" class="sync-button" type="button" title="Créer une mise à jour locale pour le widget Windows">Synchroniser le widget</button>
+        <a class="download-link" href="https://github.com/CEOMELYXJA/CockpitTakeover/releases/latest" target="_blank" rel="noopener noreferrer">Widget Windows ↗</a>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside id="controlPanel" class="control-panel" aria-label="Commandes du cockpit">
+        <div class="panel-header" id="panelHeader" data-panel-drag><div><p class="eyebrow" id="panelKicker">VUE D’ENSEMBLE</p><h2 id="panelTitle">En orbite</h2></div><button id="panelCollapseToggle" class="panel-close panel-collapse-toggle" type="button" aria-label="Réduire le panneau" aria-expanded="true" title="Réduire le panneau">⌃</button></div>
+        <div id="panelContent" class="panel-content"></div>
+      </aside>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <input id="taskImport" type="file" accept=".txt,.md,.markdown,.json,text/plain,application/json" hidden>
+  </div>
+  <div id="playfulToast" class="playful-toast" role="status" aria-live="polite"></div>
+  <dialog id="pinballDialog" class="pinball-dialog" aria-label="Mini pinball orbital">
+    <div id="sitePinballGame"></div>
+  </dialog>
+
+  <script src="./pinball.js" defer></script>
+  <script src="./cockpit.js" defer></script>
+  <script>if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./service-worker.js",{scope:"./"}).catch(()=>{}))</script>
+</body>
+</html>

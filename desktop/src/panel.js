@@ -3,7 +3,7 @@
 (() => {
   const byId = (id) => document.getElementById(id);
   const state = {
-    settings: { opacity: 0.82, motion: "measured", fieldEnabled: true, startWithWindows: false },
+    settings: { displayMode: "both", opacity: 0.82, motion: "measured", fieldEnabled: true, startWithWindows: false },
     toastTimer: 0
   };
 
@@ -16,6 +16,7 @@
   }
 
   function renderSettings() {
+    byId("settingDisplayMode").value = state.settings.displayMode || "both";
     byId("settingOpacity").value = String(Math.round((state.settings.opacity || 0.82) * 100));
     byId("settingMotion").value = state.settings.motion || "measured";
     byId("settingFieldEnabled").checked = state.settings.fieldEnabled !== false;
@@ -55,6 +56,7 @@
   async function persistSettings() {
     try {
       state.settings = await window.qgDesktop.saveSettings({
+        displayMode: byId("settingDisplayMode").value,
         opacity: Number(byId("settingOpacity").value) / 100,
         motion: byId("settingMotion").value,
         fieldEnabled: byId("settingFieldEnabled").checked,
@@ -116,7 +118,7 @@
   resizeHandle.addEventListener("pointerup", finishPanelResize);
   resizeHandle.addEventListener("pointercancel", finishPanelResize);
   resizeHandle.addEventListener("lostpointercapture", finishPanelResize);
-  ["settingOpacity", "settingMotion", "settingFieldEnabled", "settingStartup"]
+  ["settingDisplayMode", "settingOpacity", "settingMotion", "settingFieldEnabled", "settingStartup"]
     .forEach((id) => byId(id).addEventListener("change", persistSettings));
   window.qgDesktop.onAmbientStatus(renderAmbientStatus);
   window.qgDesktop.onSiteSyncStatus(renderSiteSync);
@@ -124,4 +126,3 @@
   window.qgDesktop.getSiteSyncStatus().then(renderSiteSync);
   window.qgDesktop.getSettings().then((settings) => { state.settings = { ...state.settings, ...settings }; renderSettings(); });
 })();
-

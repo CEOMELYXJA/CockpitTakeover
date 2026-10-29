@@ -45,7 +45,7 @@ if (process.argv.includes("--qg-ambient-host")) {
   let tasksPath = "";
   let settingsPath = "";
   let tasks = [];
-  let settings = { side: "right", opacity: 0.82, motion: "measured", fieldEnabled: true, startWithWindows: false, panelBounds: null, widgetPosition: null, widgetDesktopPosition: null };
+  let settings = { side: "right", displayMode: "both", opacity: 0.82, motion: "measured", fieldEnabled: true, startWithWindows: false, panelBounds: null, widgetPosition: null, widgetDesktopPosition: null };
   let siteSync = { subjects: [], tasks: [], visual: null, savedAt: 0 };
   let quitting = false;
   let appReady = false;
@@ -119,6 +119,7 @@ if (process.argv.includes("--qg-ambient-host")) {
     } : null;
     return {
       side: next.side === "left" ? "left" : "right",
+      displayMode: ["left", "right", "both"].includes(next.displayMode) ? next.displayMode : "both",
       opacity: Math.max(0.25, Math.min(1, Number(next.opacity) || 0.82)),
       motion: next.motion === "reduced" ? "reduced" : "measured",
       fieldEnabled: next.fieldEnabled !== false,
@@ -233,7 +234,9 @@ if (process.argv.includes("--qg-ambient-host")) {
       planetScale: bounded(raw.planetScale, 0.55, 1.65, 1),
       speed: bounded(raw.speed, 0.2, 1.8, 0.72),
       stars: Math.round(bounded(raw.stars, 12, 64, 30)),
-      microStarCount: Math.round(bounded(raw.microStarCount, 0, 6000, 2200)),
+      microStarCount: Math.round(bounded(raw.microStarCount, 0, 12000, 5200)),
+      microStarScale: bounded(raw.microStarScale, 0.75, 2.25, 1.25),
+      microStarSpeed: bounded(raw.microStarSpeed, 0.25, 2.5, 1),
       showOrbits: raw.showOrbits !== false,
       viewYaw: bounded(raw.viewYaw, 0, Math.PI * 2, 0),
       viewPitch: bounded(raw.viewPitch, -1.15, 1.15, 0),
@@ -247,6 +250,7 @@ if (process.argv.includes("--qg-ambient-host")) {
       coreCraters: ["none", "few", "many", "everest"].includes(raw.coreCraters) ? raw.coreCraters : "few",
       center: { x: bounded(center.x, 0.08, 0.92, 0.5), y: bounded(center.y, 0.1, 0.9, 0.53) }
     };
+    if (raw.microStarScale == null && Number(raw.microStarCount) === 2200) visual.microStarCount = 5200;
     return { subjects, tasks, visual, savedAt: Number(value.savedAt) || Date.now() };
   }
 

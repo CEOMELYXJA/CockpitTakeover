@@ -20,7 +20,8 @@
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
         <span><b>COCKPIT</b><small>ESPACE ORBITAL</small></span>
       </a>
-      <nav class="main-nav" aria-label="Espace du cockpit">
+      <button id="mobileMenuToggle" class="mobile-menu" type="button" aria-controls="mainNav" aria-expanded="false" aria-label="Ouvrir la navigation">☰</button>
+      <nav id="mainNav" class="main-nav" aria-label="Espace du cockpit">
         <button type="button" data-view="tasks" class="nav-button is-active">Planètes</button>
         <button type="button" data-view="settings" class="nav-button">Réglages</button>
         <button id="panelClose" class="nav-button panel-toggle" type="button" aria-label="Réduire le panneau" title="Réduire le panneau">⌃</button>
@@ -34,7 +35,7 @@
 
     <main class="workspace">
       <aside id="controlPanel" class="control-panel" aria-label="Commandes du cockpit">
-        <div class="panel-header" id="panelHeader" data-panel-drag><div><p class="eyebrow" id="panelKicker">VUE D’ENSEMBLE</p><h2 id="panelTitle">En orbite</h2></div></div>
+        <div class="panel-header" id="panelHeader" data-panel-drag><div><p class="eyebrow" id="panelKicker">VUE D’ENSEMBLE</p><h2 id="panelTitle">En orbite</h2></div><button id="panelCollapseToggle" class="panel-close panel-collapse-toggle" type="button" aria-label="Réduire le panneau" aria-expanded="true" title="Réduire le panneau">⌃</button></div>
         <div id="panelContent" class="panel-content"></div>
       </aside>
     </main>

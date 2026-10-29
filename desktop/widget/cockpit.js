@@ -43,7 +43,7 @@
     { id: "admin", name: "Administration", description: "", color: "#c6ff55", size: 1, durationMinutes: 20 },
     { id: "personal", name: "Personnel", description: "", color: "#ad7bff", size: 1, durationMinutes: 25 }
   ];
-  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, microStarCount: 2200, showOrbits: true, center: { x: 0.5, y: 0.53 }, zoomPan: { x: 0, y: 0 }, viewYaw: 0, viewPitch: 0, zoom: 1, focusTaskId: null, coreColor: "#42dcff", coreCraters: "few" };
+  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, microStarCount: 5200, microStarScale: 1.25, microStarSpeed: 1, showOrbits: true, center: { x: 0.5, y: 0.53 }, zoomPan: { x: 0, y: 0 }, viewYaw: 0, viewPitch: 0, zoom: 1, focusTaskId: null, coreColor: "#42dcff", coreCraters: "few" };
   const DEFAULT_STATE = { version: 1, view: "tasks", taskFilter: "open", panelCollapsed: false, panelPosition: null, subjects: DEFAULT_SUBJECTS.map((item) => ({ ...item })), tasks: [], visual: structuredClone(DEFAULT_VISUAL), lastSync: 0 };
   const SKY_SPHERE_STARS = Array.from({ length: 6500 }, () => {
     const vertical = Math.random() * 2 - 1;
@@ -115,7 +115,9 @@
       planetScale: clamp(source.planetScale ?? DEFAULT_VISUAL.planetScale, 0.55, 1.65),
       speed: clamp(source.speed ?? DEFAULT_VISUAL.speed, 0.2, 1.8),
       stars: Math.round(clamp(source.stars ?? DEFAULT_VISUAL.stars, 12, 64)),
-      microStarCount: Math.round(clamp(source.microStarCount ?? DEFAULT_VISUAL.microStarCount, 0, 6000)),
+      microStarCount: Math.round(clamp(source.microStarCount ?? DEFAULT_VISUAL.microStarCount, 0, 12000)),
+      microStarScale: clamp(source.microStarScale ?? DEFAULT_VISUAL.microStarScale, 0.75, 2.25),
+      microStarSpeed: clamp(source.microStarSpeed ?? DEFAULT_VISUAL.microStarSpeed, 0.25, 2.5),
       showOrbits: source.showOrbits !== false,
       center: { x: clamp(center.x ?? 0.5, DESKTOP_WIDGET ? -4 : 0.08, DESKTOP_WIDGET ? 4 : 0.92), y: clamp(center.y ?? 0.53, DESKTOP_WIDGET ? -4 : 0.1, DESKTOP_WIDGET ? 4 : 0.9) },
       zoomPan: { x: clamp(source.zoomPan?.x ?? 0, -2.5, 2.5), y: clamp(source.zoomPan?.y ?? 0, -2.5, 2.5) },
@@ -141,7 +143,9 @@
       const seen = new Set();
       const uniqueSubjects = subjects.filter((subject) => { if (seen.has(subject.id)) subject.id = makeId(); seen.add(subject.id); return true; });
       const tasks = raw.tasks.slice(0, 500).map((task) => cleanTask(task, uniqueSubjects)).filter((task) => task.title);
-      return { ...structuredClone(DEFAULT_STATE), view: raw.view === "settings" ? "settings" : "tasks", taskFilter: ["open", "elapsed", "done", "all"].includes(raw.taskFilter) ? raw.taskFilter : "open", panelCollapsed: Boolean(raw.panelCollapsed), panelPosition: cleanPanelPosition(raw.panelPosition), subjects: uniqueSubjects, tasks, visual: cleanVisual(raw.visual), lastSync: Number(raw.lastSync) || 0 };
+      const visual = cleanVisual(raw.visual);
+      if (raw.visual && raw.visual.microStarScale == null && Number(raw.visual.microStarCount) === 2200) visual.microStarCount = DEFAULT_VISUAL.microStarCount;
+      return { ...structuredClone(DEFAULT_STATE), view: raw.view === "settings" ? "settings" : "tasks", taskFilter: ["open", "elapsed", "done", "all"].includes(raw.taskFilter) ? raw.taskFilter : "open", panelCollapsed: Boolean(raw.panelCollapsed), panelPosition: cleanPanelPosition(raw.panelPosition), subjects: uniqueSubjects, tasks, visual, lastSync: Number(raw.lastSync) || 0 };
     } catch (_) { return structuredClone(DEFAULT_STATE); }
   }
 
@@ -243,9 +247,13 @@
     const isSettings = data.view === "settings";
     document.querySelectorAll("[data-view]").forEach((button) => button.classList.toggle("is-active", button.dataset.view === data.view));
     byId("controlPanel").classList.toggle("is-collapsed", data.panelCollapsed);
-    byId("panelClose").textContent = data.panelCollapsed ? "⌄" : "⌃";
-    byId("panelClose").setAttribute("aria-label", data.panelCollapsed ? "Rouvrir le panneau" : "Réduire le panneau");
-    byId("panelClose").title = data.panelCollapsed ? "Rouvrir le panneau" : "Réduire le panneau";
+    for (const id of ["panelClose", "panelCollapseToggle"]) {
+      const button = byId(id);
+      button.textContent = data.panelCollapsed ? "⌄" : "⌃";
+      button.setAttribute("aria-label", data.panelCollapsed ? "Rouvrir le panneau" : "Réduire le panneau");
+      button.setAttribute("aria-expanded", String(!data.panelCollapsed));
+      button.title = data.panelCollapsed ? "Rouvrir le panneau" : "Réduire le panneau";
+    }
     byId("panelKicker").textContent = isSettings ? "PERSONNALISATION" : "ESPACE ORBITAL";
     byId("panelTitle").textContent = isSettings ? "Réglages de la carte" : "Mes planètes";
     byId("panelContent").innerHTML = isSettings ? renderSettingsView() : renderTasksView();
@@ -309,7 +317,7 @@
   }
   function renderSettingsView() {
     const v = data.visual;
-    return `<section class="panel-section settings-section"><h3 class="section-title">Noyau central</h3><label class="view-row"><span>Couleur du noyau<small>La sphère centrale et son halo.</small></span><input data-visual="coreColor" type="color" value="${v.coreColor}"></label><label class="view-row"><span>Relief et cratères<small>Choisissez une surface de la lune géante.</small></span><select data-visual="coreCraters"><option value="none" ${v.coreCraters === "none" ? "selected" : ""}>Aucun</option><option value="few" ${v.coreCraters === "few" ? "selected" : ""}>Quelques cratères</option><option value="many" ${v.coreCraters === "many" ? "selected" : ""}>Beaucoup de cratères</option><option value="everest" ${v.coreCraters === "everest" ? "selected" : ""}>Mont Everest — grand relief</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label><label class="view-row"><span>Micro-constellations<small>Étoiles pâles en orbite lente, dans l’application et le widget.</small></span><input data-visual="microStarCount" type="range" min="0" max="6000" step="100" value="${v.microStarCount}"><output data-output="microStarCount">${v.microStarCount}</output></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, elle se met à jour automatiquement.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
+    return `<section class="panel-section settings-section"><h3 class="section-title">Noyau central</h3><label class="view-row"><span>Couleur du noyau<small>La sphère centrale et son halo.</small></span><input data-visual="coreColor" type="color" value="${v.coreColor}"></label><label class="view-row"><span>Relief et cratères<small>Choisissez une surface de la lune géante.</small></span><select data-visual="coreCraters"><option value="none" ${v.coreCraters === "none" ? "selected" : ""}>Aucun</option><option value="few" ${v.coreCraters === "few" ? "selected" : ""}>Quelques cratères</option><option value="many" ${v.coreCraters === "many" ? "selected" : ""}>Beaucoup de cratères</option><option value="everest" ${v.coreCraters === "everest" ? "selected" : ""}>Mont Everest — grand relief</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label><label class="view-row"><span>Micro-constellations<small>Quantité d’étoiles animées visibles dans l’application et le widget.</small></span><input data-visual="microStarCount" type="range" min="0" max="12000" step="200" value="${v.microStarCount}"><output data-output="microStarCount">${v.microStarCount.toLocaleString("fr-CA")}</output></label><label class="view-row"><span>Taille des micro-étoiles</span><input data-visual="microStarScale" type="range" min="0.75" max="2.25" step="0.05" value="${v.microStarScale}"><output data-output="microStarScale">${v.microStarScale.toFixed(2)}×</output></label><label class="view-row"><span>Vitesse des micro-orbites</span><input data-visual="microStarSpeed" type="range" min="0.25" max="2.5" step="0.05" value="${v.microStarSpeed}"><output data-output="microStarSpeed">${v.microStarSpeed.toFixed(2)}×</output></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, elle se met à jour automatiquement.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
   }
   function updateHeader() {
     const badge = byId("syncBadge");
@@ -321,7 +329,9 @@
 
   function setView(view) {
     if (!["tasks", "settings"].includes(view)) return;
-    data.view = view; save(); render();
+    data.view = view;
+    data.panelCollapsed = false;
+    save(); render();
   }
 
   function syncWidget() {
@@ -408,7 +418,7 @@
       data.visual[key] = input.type === "checkbox" ? input.checked : input.type === "color" || key === "coreCraters" ? input.value : Number(input.value);
       if (key === "stars") createStars();
       const output = document.querySelector(`[data-output="${key}"]`);
-      if (output) output.textContent = key === "planetScale" ? `${Math.round(data.visual[key] * 100)}%` : key === "speed" ? `${data.visual[key].toFixed(2)}×` : String(data.visual[key]);
+      if (output) output.textContent = key === "planetScale" ? `${Math.round(data.visual[key] * 100)}%` : key === "speed" || key === "microStarScale" || key === "microStarSpeed" ? `${data.visual[key].toFixed(2)}×` : key === "microStarCount" ? data.visual[key].toLocaleString("fr-CA") : String(data.visual[key]);
       save();
       return;
     }
@@ -566,7 +576,7 @@
   }
 
   function createMicroStars() {
-    const count = Math.round(clamp(data.visual.microStarCount, 0, 6000));
+    const count = Math.round(clamp(data.visual.microStarCount, 0, 12000));
     const span = Math.max(1, Math.min(width, height));
     microStars = [];
     microStarClusters = [];
@@ -640,7 +650,7 @@
     });
     const layers = { back: makeLayer(), front: makeLayer() };
     const positions = new Array(microStars.length);
-    const slowFactor = data.visual.speed * (motionPreference === "reduced" ? 0.3 : 1);
+    const slowFactor = data.visual.speed * data.visual.microStarSpeed * (motionPreference === "reduced" ? 0.3 : 1);
     for (let index = 0; index < microStars.length; index++) {
       const star = microStars[index];
       const cluster = microStarClusters[star.clusterId];
@@ -658,7 +668,7 @@
       const layer = point.depth > 0 ? layers.back : layers.front;
       const twinkle = 0.5 + 0.5 * Math.sin(timestamp * star.twinkleSpeed + star.phase);
       const brightness = Math.min(2, Math.floor(twinkle * 3));
-      const pointRadius = star.size * (0.72 + twinkle * 0.48);
+      const pointRadius = star.size * data.visual.microStarScale * (0.72 + twinkle * 0.48);
       const path = layer.dots[star.color * 3 + brightness];
       path.moveTo(point.x + pointRadius, point.y);
       path.arc(point.x, point.y, pointRadius, 0, TAU);
@@ -1538,17 +1548,35 @@
   byId("pinballDialog").addEventListener("close", () => {
     pinballMount?.destroy?.(); pinballMount = null; pinballOpen = false;
   });
-  document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
+  document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => {
+    setView(button.dataset.view);
+    byId("mainNav").classList.remove("is-open");
+    byId("mobileMenuToggle").setAttribute("aria-expanded", "false");
+    byId("mobileMenuToggle").setAttribute("aria-label", "Ouvrir la navigation");
+    byId("mobileMenuToggle").textContent = "☰";
+  }));
+  byId("mobileMenuToggle").addEventListener("click", () => {
+    const expanded = byId("mainNav").classList.toggle("is-open");
+    byId("mobileMenuToggle").setAttribute("aria-expanded", String(expanded));
+    byId("mobileMenuToggle").setAttribute("aria-label", expanded ? "Fermer la navigation" : "Ouvrir la navigation");
+    byId("mobileMenuToggle").textContent = expanded ? "×" : "☰";
+  });
   byId("syncWidget").addEventListener("click", syncWidget);
-  byId("panelClose").addEventListener("click", () => {
+  const togglePanelCollapsed = () => {
     const panel = byId("controlPanel");
     const collapsed = panel.classList.toggle("is-collapsed");
     data.panelCollapsed = collapsed; save();
-    byId("panelClose").textContent = collapsed ? "⌄" : "⌃";
-    byId("panelClose").setAttribute("aria-label", collapsed ? "Rouvrir le panneau" : "Réduire le panneau");
-    byId("panelClose").title = collapsed ? "Rouvrir le panneau" : "Réduire le panneau";
+    for (const id of ["panelClose", "panelCollapseToggle"]) {
+      const button = byId(id);
+      button.textContent = collapsed ? "⌄" : "⌃";
+      button.setAttribute("aria-label", collapsed ? "Rouvrir le panneau" : "Réduire le panneau");
+      button.setAttribute("aria-expanded", String(!collapsed));
+      button.title = collapsed ? "Rouvrir le panneau" : "Réduire le panneau";
+    }
     if (!collapsed) applyPanelPosition();
-  });
+  };
+  byId("panelClose").addEventListener("click", togglePanelCollapsed);
+  byId("panelCollapseToggle").addEventListener("click", togglePanelCollapsed);
   const panelHeader = byId("panelHeader");
   panelHeader.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || event.target.closest("button")) return;
