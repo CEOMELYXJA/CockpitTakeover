@@ -65,6 +65,11 @@ bool IsPointInsideDesktopView(HWND iconView, POINT screenPoint) {
   return IsWindow(iconView) && GetWindowRect(iconView, &bounds) && PtInRect(&bounds, screenPoint) != 0;
 }
 
+bool IsPointInsideScene(HWND child, POINT screenPoint) {
+  RECT bounds{};
+  return IsWindow(child) && GetWindowRect(child, &bounds) && PtInRect(&bounds, screenPoint) != 0;
+}
+
 bool HasDesktopIconAtPoint(HWND iconView, POINT screenPoint) {
   if (!IsWindow(iconView)) return true;
   const HWND listView = FindWindowExW(iconView, nullptr, L"SysListView32", nullptr);
@@ -109,16 +114,23 @@ LRESULT CALLBACK CoreDragMouseHook(int code, WPARAM message, LPARAM data) {
   if (message == WM_RBUTTONDOWN) {
     if (!IsDesktopForegroundWindow()) return CallNextHookEx(g_mouseHook, code, message, data);
     std::lock_guard<std::mutex> lock(g_dragMutex);
+    const CoreDragArea* fallback = nullptr;
+    const CoreDragArea* selected = nullptr;
     for (const auto& area : g_dragAreas) {
-      const double dx = static_cast<double>(mouse->pt.x - area.center.x);
-      const double dy = static_cast<double>(mouse->pt.y - area.center.y);
-      if (dx * dx + dy * dy > area.radius * area.radius) continue;
+      if (!IsPointInsideScene(area.child, mouse->pt)) continue;
       if (!IsPointInsideDesktopView(area.iconView, mouse->pt)) continue;
       if (HasDesktopIconAtPoint(area.iconView, mouse->pt)) break;
-      g_draggingChild = area.child;
+      if (!fallback) fallback = &area;
+      const double dx = static_cast<double>(mouse->pt.x - area.center.x);
+      const double dy = static_cast<double>(mouse->pt.y - area.center.y);
+      if (dx * dx + dy * dy <= area.radius * area.radius) { selected = &area; break; }
+    }
+    if (!selected) selected = fallback;
+    if (selected) {
+      g_draggingChild = selected->child;
       g_dragOrigin = mouse->pt;
-      g_dragOriginCore = area.center;
-      g_dragEvents.push_back({ area.child, mouse->pt, g_dragOrigin, g_dragOriginCore, 0, false });
+      g_dragOriginCore = selected->center;
+      g_dragEvents.push_back({ selected->child, mouse->pt, g_dragOrigin, g_dragOriginCore, 0, false });
       return 1;
     }
   } else if (message == WM_MOUSEMOVE) {

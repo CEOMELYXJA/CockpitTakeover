@@ -301,3 +301,23 @@ html:not(.desktop-widget) body{background:radial-gradient(ellipse at 53% 49%,rgb
 @media(min-width:821px){
   .control-panel.is-collapsed{display:none!important;visibility:hidden!important;pointer-events:none!important}
 }
+
+/* Mobile keeps the orbital canvas fixed; only the open panel content scrolls. */
+@media(max-width:820px){
+  html:not(.desktop-widget){width:100%;height:100%;min-height:100%;overflow:hidden;overscroll-behavior:none}
+  html:not(.desktop-widget) body{position:fixed;inset:0;width:100%;height:100dvh;min-height:0;overflow:hidden;overscroll-behavior:none}
+  html:not(.desktop-widget) #appShell{position:fixed;inset:0;height:100dvh;overflow:hidden}
+  html:not(.desktop-widget) .topbar{box-sizing:border-box;width:100%;min-width:0}
+  html:not(.desktop-widget) .workspace{position:fixed!important;inset:58px 0 0!important;width:100%;height:calc(100dvh - 58px);min-height:0!important;padding:0!important;overflow:hidden;pointer-events:none}
+  html:not(.desktop-widget) .mobile-menu,html:not(.desktop-widget) .mobile-panel-toggle{flex:none}
+  html:not(.desktop-widget) .top-actions{display:flex;flex:0 1 auto;min-width:0;max-width:calc(100vw - 54px);margin-left:auto}
+  html:not(.desktop-widget) .sync-button{box-sizing:border-box;flex:0 1 auto;min-width:0;max-width:calc(100vw - 104px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  html:not(.desktop-widget) .control-panel{pointer-events:auto;max-height:calc(100dvh - 70px);overflow:hidden}
+  html:not(.desktop-widget) .panel-content{flex:1 1 auto;min-height:0;max-height:none;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+}
+@media(max-width:520px){
+  html:not(.desktop-widget) .workspace{inset:54px 0 0!important;height:calc(100dvh - 54px)}
+  html:not(.desktop-widget) .sync-button{max-width:90px;padding:0 7px!important;font-size:0!important}
+  html:not(.desktop-widget) .sync-button::after{content:"Synchroniser";font-size:10px;line-height:1}
+  html:not(.desktop-widget) .control-panel{max-height:calc(100dvh - 66px)}
+}

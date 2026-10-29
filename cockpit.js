@@ -44,7 +44,7 @@
     { id: "admin", name: "Administration", description: "", color: "#c6ff55", size: 1, durationMinutes: 20 },
     { id: "personal", name: "Personnel", description: "", color: "#ad7bff", size: 1, durationMinutes: 25 }
   ];
-  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, microStarCount: 8200, microStarScale: 1.4, microStarSpeed: 1, showOrbits: true, center: { x: 0.5, y: 0.53 }, zoomPan: { x: 0, y: 0 }, viewYaw: 0, viewPitch: 0, zoom: 1, focusTaskId: null, coreColor: "#42dcff", coreCraters: "few" };
+  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, orbitSpread: 1.25, orbitRandomness: 0.62, stars: 30, microStarCount: 8200, microStarScale: 1.4, microStarSpeed: 1, showOrbits: true, center: { x: 0.5, y: 0.53 }, zoomPan: { x: 0, y: 0 }, viewYaw: 0, viewPitch: 0, zoom: 1, focusTaskId: null, coreColor: "#42dcff", coreCraters: "few" };
   const DEFAULT_STATE = { version: 1, view: "tasks", taskFilter: "open", panelCollapsed: false, panelPosition: null, subjects: DEFAULT_SUBJECTS.map((item) => ({ ...item })), tasks: [], visual: structuredClone(DEFAULT_VISUAL), lastSync: 0 };
   const SKY_SPHERE_STARS = Array.from({ length: 6500 }, () => {
     const vertical = Math.random() * 2 - 1;
@@ -115,6 +115,8 @@
       planetCount: Math.round(clamp(source.planetCount ?? DEFAULT_VISUAL.planetCount, 1, 16)),
       planetScale: clamp(source.planetScale ?? DEFAULT_VISUAL.planetScale, 0.55, 1.65),
       speed: clamp(source.speed ?? DEFAULT_VISUAL.speed, 0.2, 1.8),
+      orbitSpread: clamp(source.orbitSpread ?? DEFAULT_VISUAL.orbitSpread, 0.75, 1.9),
+      orbitRandomness: clamp(source.orbitRandomness ?? DEFAULT_VISUAL.orbitRandomness, 0, 1),
       stars: Math.round(clamp(source.stars ?? DEFAULT_VISUAL.stars, 12, 64)),
       microStarCount: Math.round(clamp(source.microStarCount ?? DEFAULT_VISUAL.microStarCount, 0, 14000)),
       microStarScale: clamp(source.microStarScale ?? DEFAULT_VISUAL.microStarScale, 0.75, 2.25),
@@ -161,6 +163,7 @@
   let inputCapture = false;
   let draggingCore = false;
   let dragPointerId = null;
+  let coreDragOffset = { x: 0, y: 0 };
   let viewDrag = null;
   let touchGesture = null;
   let coreCurrent = { ...data.visual.center };
@@ -183,7 +186,7 @@
   let microStarClusters = [];
   let starLayer = null;
   let starAnchor = { x: 0, y: 0 };
-  const MICRO_STAR_COLORS = ["#f7f8ff", "#fff7dc", "#ffe8e9", "#f0e8ff"];
+  const MICRO_STAR_COLORS = ["#e5efff", "#ffeab1", "#ffb8dc", "#c9b8ff", "#9deeff", "#ffc4ad"];
 
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
@@ -323,7 +326,7 @@
   }
   function renderSettingsView() {
     const v = data.visual;
-    return `<section class="panel-section settings-section"><h3 class="section-title">Noyau central</h3><label class="view-row"><span>Couleur du noyau<small>La sphère centrale et son halo.</small></span><input data-visual="coreColor" type="color" value="${v.coreColor}"></label><label class="view-row"><span>Relief et cratères<small>Choisissez une surface de la lune géante.</small></span><select data-visual="coreCraters"><option value="none" ${v.coreCraters === "none" ? "selected" : ""}>Aucun</option><option value="few" ${v.coreCraters === "few" ? "selected" : ""}>Quelques cratères</option><option value="many" ${v.coreCraters === "many" ? "selected" : ""}>Beaucoup de cratères</option><option value="everest" ${v.coreCraters === "everest" ? "selected" : ""}>Mont Everest — grand relief</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label><label class="view-row"><span>Micro-constellations<small>Quantité d’étoiles animées visibles dans l’application et le widget.</small></span><input data-visual="microStarCount" type="range" min="0" max="14000" step="200" value="${v.microStarCount}"><output data-output="microStarCount">${v.microStarCount.toLocaleString("fr-CA")}</output></label><label class="view-row"><span>Taille des micro-étoiles</span><input data-visual="microStarScale" type="range" min="0.75" max="2.25" step="0.05" value="${v.microStarScale}"><output data-output="microStarScale">${v.microStarScale.toFixed(2)}×</output></label><label class="view-row"><span>Vitesse des micro-orbites</span><input data-visual="microStarSpeed" type="range" min="0.25" max="2.5" step="0.05" value="${v.microStarSpeed}"><output data-output="microStarSpeed">${v.microStarSpeed.toFixed(2)}×</output></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, elle se met à jour automatiquement.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
+    return `<section class="panel-section settings-section"><h3 class="section-title">Noyau central</h3><label class="view-row"><span>Couleur du noyau<small>La sphère centrale et son halo.</small></span><input data-visual="coreColor" type="color" value="${v.coreColor}"></label><label class="view-row"><span>Relief et cratères<small>Choisissez une surface de la lune géante.</small></span><select data-visual="coreCraters"><option value="none" ${v.coreCraters === "none" ? "selected" : ""}>Aucun</option><option value="few" ${v.coreCraters === "few" ? "selected" : ""}>Quelques cratères</option><option value="many" ${v.coreCraters === "many" ? "selected" : ""}>Beaucoup de cratères</option><option value="everest" ${v.coreCraters === "everest" ? "selected" : ""}>Mont Everest — grand relief</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>&Eacute;cart des orbites<small>&Eacute;loigne vos plan&egrave;tes du noyau.</small></span><input data-visual="orbitSpread" type="range" min="0.75" max="1.9" step="0.05" value="${v.orbitSpread}"><output data-output="orbitSpread">${v.orbitSpread.toFixed(2)}&times;</output></label><label class="view-row"><span>Dispersion al&eacute;atoire<small>Varie la distance, l&#39;inclinaison et le rythme de chaque orbite.</small></span><input data-visual="orbitRandomness" type="range" min="0" max="1" step="0.05" value="${v.orbitRandomness}"><output data-output="orbitRandomness">${Math.round(v.orbitRandomness * 100)}%</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label><label class="view-row"><span>Micro-constellations<small>Quantité d’étoiles animées visibles dans l’application et le widget.</small></span><input data-visual="microStarCount" type="range" min="0" max="14000" step="200" value="${v.microStarCount}"><output data-output="microStarCount">${v.microStarCount.toLocaleString("fr-CA")}</output></label><label class="view-row"><span>Taille des micro-étoiles</span><input data-visual="microStarScale" type="range" min="0.75" max="2.25" step="0.05" value="${v.microStarScale}"><output data-output="microStarScale">${v.microStarScale.toFixed(2)}×</output></label><label class="view-row"><span>Vitesse des micro-orbites</span><input data-visual="microStarSpeed" type="range" min="0.25" max="2.5" step="0.05" value="${v.microStarSpeed}"><output data-output="microStarSpeed">${v.microStarSpeed.toFixed(2)}×</output></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, elle se met à jour automatiquement.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
   }
   function updateHeader() {
     const badge = byId("syncBadge");
@@ -424,7 +427,7 @@
       data.visual[key] = input.type === "checkbox" ? input.checked : input.type === "color" || key === "coreCraters" ? input.value : Number(input.value);
       if (key === "stars") createStars();
       const output = document.querySelector(`[data-output="${key}"]`);
-      if (output) output.textContent = key === "planetScale" ? `${Math.round(data.visual[key] * 100)}%` : key === "speed" || key === "microStarScale" || key === "microStarSpeed" ? `${data.visual[key].toFixed(2)}×` : key === "microStarCount" ? data.visual[key].toLocaleString("fr-CA") : String(data.visual[key]);
+      if (output) output.textContent = key === "planetScale" ? `${Math.round(data.visual[key] * 100)}%` : key === "speed" || key === "orbitSpread" || key === "microStarScale" || key === "microStarSpeed" ? `${data.visual[key].toFixed(2)}×` : key === "orbitRandomness" ? `${Math.round(data.visual[key] * 100)}%` : key === "microStarCount" ? data.visual[key].toLocaleString("fr-CA") : String(data.visual[key]);
       save();
       return;
     }
@@ -589,7 +592,7 @@
     for (let index = 0; index < count; index += 12) {
       const clusterId = microStarClusters.length;
       const cluster = {
-        radius: span * (0.035 + Math.pow(Math.random(), 1.52) * 0.48),
+        radius: span * (0.04 + Math.pow(Math.random(), 1.3) * 0.4),
         phase: Math.random() * TAU,
         inclination: 0.18 + Math.random() * 1.22,
         nodeAngle: Math.random() * TAU,
@@ -605,8 +608,8 @@
         microStars.push({
           clusterId,
           member,
-          radiusOffset: (Math.random() - 0.5) * span * 0.018,
-          angleOffset: (Math.random() - 0.5) * 0.2,
+          radiusOffset: (Math.random() - 0.5) * span * 0.022,
+          angleOffset: (Math.random() - 0.5) * 0.26,
           size: 0.24 + Math.random() * 0.48,
           phase: Math.random() * TAU,
           twinkleSpeed: 0.00028 + Math.random() * 0.00052,
@@ -697,11 +700,11 @@
     ctx.lineWidth = 0.45;
     ctx.lineCap = "round";
     for (let color = 0; color < MICRO_STAR_COLORS.length; color++) {
-      ctx.globalAlpha = 0.11;
+      ctx.globalAlpha = 0.065;
       ctx.strokeStyle = MICRO_STAR_COLORS[color];
       ctx.stroke(layer.links[color]);
     }
-    const opacity = [0.2, 0.34, 0.5];
+    const opacity = [0.19, 0.31, 0.43];
     for (let index = 0; index < layer.dots.length; index++) {
       ctx.globalAlpha = opacity[index % 3];
       ctx.fillStyle = MICRO_STAR_COLORS[Math.floor(index / 3)];
@@ -716,7 +719,7 @@
     const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw);
     const cosPitch = Math.cos(pitch), sinPitch = Math.sin(pitch);
     const radius = Math.hypot(width, height) / 2 / 1.55;
-    const count = Math.round(clamp(data.visual.stars, 12, 64) * 100);
+    const count = Math.min(SKY_SPHERE_STARS.length, Math.round(clamp(data.visual.stars, 12, 64) * 125));
     const focus = clamp((data.visual.zoom - 1.6) / 1.2, 0, 1);
     const groups = Array.from({ length: 9 }, () => new Path2D());
     for (let index = 0; index < count; index++) {
@@ -1044,19 +1047,29 @@
     ctx.restore(); ctx.globalAlpha = 1;
   }
 
+  function taskOrbitParameters(task, index, core, timestamp, progress) {
+    const seed = (part) => orbitalSeed(`${task.id}:orbit:${part}`) / 0xffffffff;
+    const randomness = data.visual.orbitRandomness;
+    const zoom = data.visual.zoom;
+    const orbitIndex = index + 1;
+    const radialVariation = 1 + (seed("radius") - 0.5) * 0.7 * randomness;
+    const outer = Math.min(Math.min(width, height) * 0.48 * zoom, core.radius + (84 + (orbitIndex % 4) * 34) * data.visual.orbitSpread * radialVariation * zoom);
+    const orbit = core.radius + 22 * zoom + Math.max(0, outer - core.radius - 22 * zoom) * (1 - Math.pow(progress, 1.38));
+    const direction = index % 2 ? -1 : 1;
+    const speedVariation = 1 + (seed("speed") - 0.5) * 0.32 * randomness;
+    const speed = .00013 * data.visual.speed * (motionPreference === "reduced" ? 0.45 : 1) * (1 + index * .055) * speedVariation * direction;
+    const angle = index * 2.399963 + (task.startedAt || task.createdAt) * .000002 + (seed("phase") - 0.5) * 2.4 * randomness + timestamp * speed;
+    const inclination = [0.38, 0.68, 0.94, 1.18, 0.52, 1.36][index % 6] + (seed("inclination") - 0.5) * 0.62 * randomness;
+    const nodeAngle = index * 1.73 + (seed("node") - 0.5) * 1.5 * randomness + 0.26 * Math.sin(timestamp * .000018 + index);
+    return { orbit, angle, inclination, nodeAngle };
+  }
+
   function drawTaskPlanet(task, index, core, timestamp, wallTime) {
     const subject = subjectById(task.subjectId);
     const color = task.planetColor || subject?.color || NEON_COLORS[index % NEON_COLORS.length];
     const phase = taskPhase(task, wallTime);
     const progress = phase === "running" ? taskProgress(task, wallTime) : phase === "elapsed" ? 1 : 0;
-    const orbitIndex = index + 1;
-    const outer = Math.min(Math.min(width, height) * .44 * data.visual.zoom, core.radius + (84 + (orbitIndex % 4) * 34) * data.visual.zoom);
-    const orbit = core.radius + 22 * data.visual.zoom + (outer - core.radius - 22 * data.visual.zoom) * (1 - Math.pow(progress, 1.38));
-    const direction = index % 2 ? -1 : 1;
-    const speed = .00013 * data.visual.speed * (motionPreference === "reduced" ? 0.45 : 1) * (1 + index * .055) * direction;
-    const angle = (index * 2.399963) + (task.startedAt || task.createdAt) * .000002 + timestamp * speed;
-    const inclination = [0.38, 0.68, 0.94, 1.18, 0.52, 1.36][index % 6];
-    const nodeAngle = index * 1.73 + 0.26 * Math.sin(timestamp * .000018 + index);
+    const { orbit, angle, inclination, nodeAngle } = taskOrbitParameters(task, index, core, timestamp, progress);
     const position = orbitPoint(core, angle, orbit, inclination, nodeAngle, timestamp);
     const { x, y } = position;
     const urgency = phase === "running" && taskDeadline(task) ? progress : phase === "elapsed" ? 1 : 0;
@@ -1332,20 +1345,15 @@
     if (active.length) urgency = Math.max(...active.map((task) => taskProgress(task, wallTime)));
     drawDistantOrbitals(core, timestamp);
     if (data.visual.showOrbits) {
-      [1.42, 1.92, 2.5].forEach((factor, index) => drawProjectedOrbit(core, core.radius * factor + 34, .48 + index * .21, -.17 + index * .72, index % 2 ? "#8b79ff" : "#42dcff", .11, timestamp));
+      const orbitScale = 0.9 + data.visual.orbitSpread * 0.16;
+      [1.42, 1.92, 2.5].forEach((factor, index) => drawProjectedOrbit(core, core.radius * factor * orbitScale + 34, .48 + index * .21, -.17 + index * .72, index % 2 ? "#8b79ff" : "#42dcff", .11, timestamp));
     }
     const ordered = active.map((task, index) => ({ task, index, phase: taskPhase(task, wallTime), progress: taskPhase(task, wallTime) === "running" ? taskProgress(task, wallTime) : 0 }))
       .sort((a, b) => Number(b.phase === "elapsed") - Number(a.phase === "elapsed") || (a.progress - b.progress));
     const rear = ordered.filter(({ task, index, phase }) => {
       const progress = phase === "running" ? taskProgress(task, wallTime) : phase === "elapsed" ? 1 : 0;
-      const outer = Math.min(Math.min(width, height) * .44 * data.visual.zoom, core.radius + (84 + ((index + 1) % 4) * 34) * data.visual.zoom);
-      const orbit = core.radius + 22 * data.visual.zoom + (outer - core.radius - 22 * data.visual.zoom) * (1 - Math.pow(progress, 1.38));
-      const direction = index % 2 ? -1 : 1;
-      const speed = .00013 * data.visual.speed * (motionPreference === "reduced" ? 0.45 : 1) * (1 + index * .055) * direction;
-      const angle = index * 2.399963 + (task.startedAt || task.createdAt) * .000002 + timestamp * speed;
-      const inclination = [0.38, 0.68, 0.94, 1.18, 0.52, 1.36][index % 6];
-      const nodeAngle = index * 1.73 + 0.26 * Math.sin(timestamp * .000018 + index);
-      return orbitPoint(core, angle, orbit, inclination, nodeAngle, timestamp).depth > 0;
+      const position = taskOrbitParameters(task, index, core, timestamp, progress);
+      return orbitPoint(core, position.angle, position.orbit, position.inclination, position.nodeAngle, timestamp).depth > 0;
     });
     const front = ordered.filter((item) => !rear.includes(item));
     rear.forEach(({ task, index }) => drawTaskPlanet(task, index, core, timestamp, wallTime));
@@ -1439,7 +1447,10 @@
     if (!DESKTOP_WIDGET) save();
   }
 
-  function setCenterFromPointer(event) { setCenterFromPoint(pointerPoint(event)); }
+  function setCenterFromPointer(event) {
+    const point = pointerPoint(event);
+    setCenterFromPoint({ x: point.x + coreDragOffset.x, y: point.y + coreDragOffset.y });
+  }
 
   function finishDrag() {
     if (!draggingCore) return;
@@ -1450,6 +1461,7 @@
       setWidgetInput(false);
     } else save();
     dragPointerId = null;
+    coreDragOffset = { x: 0, y: 0 };
   }
 
   function wrapAngle(value) { return ((value % TAU) + TAU) % TAU; }
@@ -1574,7 +1586,9 @@
   canvas.addEventListener("pointerdown", (event) => {
     const point = pointerPoint(event);
     if (event.pointerType === "touch") return;
-    if (nearCore(point, 3) && event.button === 2) {
+    if (event.button === 2) {
+      const core = coreGeometry();
+      coreDragOffset = { x: core.x - point.x, y: core.y - point.y };
       draggingCore = true; dragPointerId = event.pointerId;
       try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
       event.preventDefault(); event.stopPropagation();
@@ -1604,7 +1618,7 @@
     if (event.pointerId === dragPointerId) finishDrag();
     finishViewDrag(event.pointerId);
   });
-  canvas.addEventListener("contextmenu", (event) => { if (nearCore(pointerPoint(event), 5)) event.preventDefault(); });
+  document.addEventListener("contextmenu", (event) => event.preventDefault(), true);
   canvas.addEventListener("wheel", handleWheelZoom, { passive: false });
   canvas.addEventListener("pointerleave", () => { if (!draggingCore && !viewDrag && !touchGesture && !pinballOpen && DESKTOP_WIDGET) setWidgetInput(false); });
   document.addEventListener("touchstart", beginTouchGesture, { passive: false, capture: true });
