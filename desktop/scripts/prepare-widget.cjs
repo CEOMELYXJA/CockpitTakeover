@@ -21,7 +21,7 @@ for (const file of appFiles) {
 }
 
 const widgetScriptPath = path.join(output, "cockpit.js");
-let widgetScript = fs.readFileSync(widgetScriptPath, "utf8");
+let widgetScript = fs.readFileSync(widgetScriptPath, "utf8").replace(/\r\n?/g, "\n");
 widgetScript = replaceOnce(widgetScript,
   '    const core = coreGeometry(); coreHit = { x: core.x, y: core.y, radius: core.radius * 1.18 };',
   '    const core = coreGeometry(); coreHit = { x: core.x, y: core.y, radius: core.radius * 1.18 };\n    window.qgScene?.setCoreDragArea?.({ x: core.x, y: core.y, radius: coreHit.radius });',
