@@ -360,6 +360,7 @@
       if (key === "durationMinutes") task[key] = clamp(input.value, 5, 1440);
       else if (key === "planetSize") task[key] = clamp(input.value, 0.55, 1.65);
       else task[key] = input.value;
+      if (key === "topicName") task.subjectId = null;
       const card = input.closest("[data-planet-card]");
       if (key === "planetColor") card?.querySelector(".planet-swatch")?.style.setProperty("--planet-color", task.planetColor);
       if (key === "planetSize") {
