@@ -60,6 +60,11 @@ POINT g_dragOriginCore{};
 
 bool IsWindowClass(HWND hwnd, const wchar_t* expected);
 
+bool IsPointInsideDesktopView(HWND iconView, POINT screenPoint) {
+  RECT bounds{};
+  return IsWindow(iconView) && GetWindowRect(iconView, &bounds) && PtInRect(&bounds, screenPoint) != 0;
+}
+
 bool HasDesktopIconAtPoint(HWND iconView, POINT screenPoint) {
   if (!IsWindow(iconView)) return true;
   const HWND listView = FindWindowExW(iconView, nullptr, L"SysListView32", nullptr);
@@ -108,6 +113,7 @@ LRESULT CALLBACK CoreDragMouseHook(int code, WPARAM message, LPARAM data) {
       const double dx = static_cast<double>(mouse->pt.x - area.center.x);
       const double dy = static_cast<double>(mouse->pt.y - area.center.y);
       if (dx * dx + dy * dy > area.radius * area.radius) continue;
+      if (!IsPointInsideDesktopView(area.iconView, mouse->pt)) continue;
       if (HasDesktopIconAtPoint(area.iconView, mouse->pt)) break;
       g_draggingChild = area.child;
       g_dragOrigin = mouse->pt;
@@ -144,6 +150,7 @@ LRESULT CALLBACK CoreDragMouseHook(int code, WPARAM message, LPARAM data) {
           const double dx = static_cast<double>(mouse->pt.x - area.center.x);
           const double dy = static_cast<double>(mouse->pt.y - area.center.y);
           if (dx * dx + dy * dy > area.radius * area.radius) continue;
+          if (!IsPointInsideDesktopView(area.iconView, mouse->pt)) continue;
           if (HasDesktopIconAtPoint(area.iconView, mouse->pt)) break;
           g_mascotClickingChild = area.child;
           g_dragEvents.push_back({ area.child, mouse->pt, mouse->pt, {}, 0, true });

@@ -1,3 +1,4 @@
-# Cockpit Takeover Widget 0.11.7
+# Cockpit Takeover Widget 0.11.8
 
-- Le déplacement du noyau au clic droit suit le mouvement de la souris et persiste sa position sur les écrans.
+- Le déplacement au clic droit suit désormais la position réelle du curseur et traverse les écrans en conservant une position commune.
+- Les micro-constellations lentes et scintillantes sont réglables dans l’application et visibles dans le widget.

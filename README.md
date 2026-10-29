@@ -10,7 +10,7 @@ Quand vous mettez une planète en orbite, elle tourne autour du noyau. À mesure
 
 ## Ajuster la carte
 
-Dans **Réglages**, ajustez le nombre de planètes visibles, l’échelle, la vitesse, les orbites magnétiques et les petites étoiles. Les préférences sont enregistrées dans ce navigateur. Le fond noir et les couleurs vives s’inspirent du cockpit original.
+Dans **Réglages**, ajustez le nombre de planètes visibles, l’échelle, la vitesse, les orbites magnétiques, les petites étoiles et la quantité de micro-constellations lentes. Les préférences sont enregistrées dans ce navigateur. Le fond noir et les couleurs vives s’inspirent du cockpit original.
 
 Pour déplacer le noyau dans le widget Windows, maintenez le clic droit dessus et faites-le glisser. Les autres éléments ne captent pas les clics; les icônes Windows restent accessibles.
 

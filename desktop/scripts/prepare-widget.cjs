@@ -30,16 +30,4 @@ widgetScript = replaceOnce(widgetScript,
   '    const core = coreGeometry(); coreHit = { x: core.x, y: core.y, radius: core.radius * 1.18 };',
   '    const core = coreGeometry(); coreHit = { x: core.x, y: core.y, radius: core.radius * 1.18 };\n    window.qgScene?.setCoreDragArea?.({ x: core.x, y: core.y, radius: coreHit.radius });\n    const mascot = planetHits.find((hit) => hit.kind === "mascot");\n    window.qgScene?.setMascotClickArea?.({ x: mascot?.x || 0, y: mascot?.y || 0, radius: mascot?.radius || 0, active: Boolean(mascot && mascot.depth <= 0) });',
   "la zone de déplacement du noyau");
-widgetScript = replaceOnce(widgetScript,
-  '  if (window.qgScene) {\n    window.qgScene.onSceneState((snapshot) => {',
-  '  if (window.qgScene) {\n    if (DESKTOP_WIDGET) {\n      let nativeDragStart = null;\n      window.qgScene.onCoreDrag((drag) => {\n        if (!drag || !Number.isFinite(drag.deltaX) || !Number.isFinite(drag.deltaY)) return;\n        if (drag.phase === "start") {\n          const core = coreGeometry();\n          nativeDragStart = { x: core.x / Math.max(1, width), y: core.y / Math.max(1, height) };\n        }\n        if (!nativeDragStart) return;\n        data.visual.center = {\n          x: clamp(nativeDragStart.x + drag.deltaX, -4, 4),\n          y: clamp(nativeDragStart.y + drag.deltaY, -4, 4)\n        };\n        data.visual.zoomPan = { x: 0, y: 0 };\n        coreTarget = { ...data.visual.center };\n        coreCurrent = { ...coreTarget };\n        if (drag.phase === "end") nativeDragStart = null;\n      });\n      window.qgScene.onMascotClick(() => handleMascotPlanetClick());\n    }\n    window.qgScene.onSceneState((snapshot) => {',
-  "le clic sur la planète de divertissement");
-widgetScript = replaceOnce(widgetScript,
-  '      if (settings.visual) data.visual = cleanVisual({ ...data.visual, ...settings.visual });',
-  '      const previousStarCount = data.visual.stars;\n      if (settings.visual) data.visual = cleanVisual({ ...data.visual, ...settings.visual });\n      if (data.visual.stars !== previousStarCount) createStars();',
-  "les mises à jour en direct sans reconstruire le canvas");
-widgetScript = replaceOnce(widgetScript,
-  '      coreCurrent = { ...data.visual.center }; coreTarget = { ...data.visual.center }; resizeCanvas();',
-  '      coreCurrent = { ...data.visual.center }; coreTarget = { ...data.visual.center };',
-  "le déplacement en direct de la scène sur plusieurs écrans");
 fs.writeFileSync(widgetScriptPath, widgetScript, "utf8");

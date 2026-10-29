@@ -43,7 +43,7 @@
     { id: "admin", name: "Administration", description: "", color: "#c6ff55", size: 1, durationMinutes: 20 },
     { id: "personal", name: "Personnel", description: "", color: "#ad7bff", size: 1, durationMinutes: 25 }
   ];
-  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, showOrbits: true, center: { x: 0.5, y: 0.53 }, zoomPan: { x: 0, y: 0 }, viewYaw: 0, viewPitch: 0, zoom: 1, focusTaskId: null, coreColor: "#42dcff", coreCraters: "few" };
+  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, microStarCount: 2200, showOrbits: true, center: { x: 0.5, y: 0.53 }, zoomPan: { x: 0, y: 0 }, viewYaw: 0, viewPitch: 0, zoom: 1, focusTaskId: null, coreColor: "#42dcff", coreCraters: "few" };
   const DEFAULT_STATE = { version: 1, view: "tasks", taskFilter: "open", panelCollapsed: false, panelPosition: null, subjects: DEFAULT_SUBJECTS.map((item) => ({ ...item })), tasks: [], visual: structuredClone(DEFAULT_VISUAL), lastSync: 0 };
   const SKY_SPHERE_STARS = Array.from({ length: 6500 }, () => {
     const vertical = Math.random() * 2 - 1;
@@ -115,6 +115,7 @@
       planetScale: clamp(source.planetScale ?? DEFAULT_VISUAL.planetScale, 0.55, 1.65),
       speed: clamp(source.speed ?? DEFAULT_VISUAL.speed, 0.2, 1.8),
       stars: Math.round(clamp(source.stars ?? DEFAULT_VISUAL.stars, 12, 64)),
+      microStarCount: Math.round(clamp(source.microStarCount ?? DEFAULT_VISUAL.microStarCount, 0, 6000)),
       showOrbits: source.showOrbits !== false,
       center: { x: clamp(center.x ?? 0.5, 0.08, 0.92), y: clamp(center.y ?? 0.53, 0.1, 0.9) },
       zoomPan: { x: clamp(source.zoomPan?.x ?? 0, -2.5, 2.5), y: clamp(source.zoomPan?.y ?? 0, -2.5, 2.5) },
@@ -162,15 +163,18 @@
   let pinballMount = null;
   let playfulToastTimer = 0;
   let audioContext = null;
-  let width = 1, height = 1, ratio = 1, lastDraw = 0, lastPositionSent = 0, projectionCache = null;
+  let width = 1, height = 1, ratio = 1, lastDraw = 0, lastHitAreaSent = 0, projectionCache = null;
   let panelDrag = null;
   let currentTasksSnapshot = [];
   let motionPreference = "measured";
   const canvas = byId("universeCanvas");
   const ctx = canvas.getContext("2d", { alpha: true, desynchronized: true });
   let stars = [];
+  let microStars = [];
+  let microStarClusters = [];
   let starLayer = null;
   let starAnchor = { x: 0, y: 0 };
+  const MICRO_STAR_COLORS = ["#f7f8ff", "#fff7dc", "#ffe8e9", "#f0e8ff"];
 
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
@@ -305,7 +309,7 @@
   }
   function renderSettingsView() {
     const v = data.visual;
-    return `<section class="panel-section settings-section"><h3 class="section-title">Noyau central</h3><label class="view-row"><span>Couleur du noyau<small>La sphère centrale et son halo.</small></span><input data-visual="coreColor" type="color" value="${v.coreColor}"></label><label class="view-row"><span>Relief et cratères<small>Choisissez une surface de la lune géante.</small></span><select data-visual="coreCraters"><option value="none" ${v.coreCraters === "none" ? "selected" : ""}>Aucun</option><option value="few" ${v.coreCraters === "few" ? "selected" : ""}>Quelques cratères</option><option value="many" ${v.coreCraters === "many" ? "selected" : ""}>Beaucoup de cratères</option><option value="everest" ${v.coreCraters === "everest" ? "selected" : ""}>Mont Everest — grand relief</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, elle se met à jour automatiquement.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
+    return `<section class="panel-section settings-section"><h3 class="section-title">Noyau central</h3><label class="view-row"><span>Couleur du noyau<small>La sphère centrale et son halo.</small></span><input data-visual="coreColor" type="color" value="${v.coreColor}"></label><label class="view-row"><span>Relief et cratères<small>Choisissez une surface de la lune géante.</small></span><select data-visual="coreCraters"><option value="none" ${v.coreCraters === "none" ? "selected" : ""}>Aucun</option><option value="few" ${v.coreCraters === "few" ? "selected" : ""}>Quelques cratères</option><option value="many" ${v.coreCraters === "many" ? "selected" : ""}>Beaucoup de cratères</option><option value="everest" ${v.coreCraters === "everest" ? "selected" : ""}>Mont Everest — grand relief</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label><label class="view-row"><span>Micro-constellations<small>Étoiles pâles en orbite lente, dans l’application et le widget.</small></span><input data-visual="microStarCount" type="range" min="0" max="6000" step="100" value="${v.microStarCount}"><output data-output="microStarCount">${v.microStarCount}</output></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, elle se met à jour automatiquement.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
   }
   function updateHeader() {
     const badge = byId("syncBadge");
@@ -439,7 +443,10 @@
 
   function handleChange(event) {
     const input = event.target;
-    if (input.matches("[data-visual]")) { data.visual = cleanVisual(data.visual); save(); return; }
+    if (input.matches("[data-visual]")) {
+      if (input.dataset.visual === "microStarCount") createMicroStars();
+      data.visual = cleanVisual(data.visual); save(); return;
+    }
     if (input.matches("[data-task-filter]")) { data.taskFilter = input.value; save(); render(); return; }
     if (input.matches("[data-task-field]")) {
       const task = data.tasks.find((item) => item.id === input.dataset.id);
@@ -558,6 +565,41 @@
     stars = Array.from({ length: movingCount }, (_, index) => ({ orbit: span * (0.04 + Math.pow(Math.random(), 1.55) * 0.55), phase: Math.random() * TAU, size: 0.38 + Math.random() * 0.7, alpha: 0.12 + Math.random() * 0.25, speed: (0.000009 + Math.random() * 0.000015) * (index % 3 ? 1 : -1), squash: 0.62 + Math.random() * 0.2 }));
   }
 
+  function createMicroStars() {
+    const count = Math.round(clamp(data.visual.microStarCount, 0, 6000));
+    const span = Math.max(1, Math.min(width, height));
+    microStars = [];
+    microStarClusters = [];
+    for (let index = 0; index < count; index += 12) {
+      const clusterId = microStarClusters.length;
+      const cluster = {
+        radius: span * (0.035 + Math.pow(Math.random(), 1.52) * 0.48),
+        phase: Math.random() * TAU,
+        inclination: 0.18 + Math.random() * 1.22,
+        nodeAngle: Math.random() * TAU,
+        speed: (0.0000001 + Math.random() * 0.00000027) * (clusterId % 2 ? -1 : 1)
+      };
+      cluster.cosNode = Math.cos(cluster.nodeAngle);
+      cluster.sinNode = Math.sin(cluster.nodeAngle);
+      cluster.cosInclination = Math.cos(cluster.inclination);
+      cluster.sinInclination = Math.sin(cluster.inclination);
+      microStarClusters.push(cluster);
+      const members = Math.min(12, count - index);
+      for (let member = 0; member < members; member++) {
+        microStars.push({
+          clusterId,
+          member,
+          radiusOffset: (Math.random() - 0.5) * span * 0.018,
+          angleOffset: (Math.random() - 0.5) * 0.2,
+          size: 0.24 + Math.random() * 0.48,
+          phase: Math.random() * TAU,
+          twinkleSpeed: 0.00028 + Math.random() * 0.00052,
+          color: Math.floor(Math.random() * MICRO_STAR_COLORS.length)
+        });
+      }
+    }
+  }
+
   function resizeCanvas() {
     ratio = Math.min(window.devicePixelRatio || 1, DESKTOP_WIDGET ? 1.25 : 1.5);
     width = Math.max(1, canvas.clientWidth || window.innerWidth);
@@ -565,6 +607,7 @@
     canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     createStars();
+    createMicroStars();
     if (DESKTOP_WIDGET) updateHitArea();
   }
 
@@ -587,6 +630,68 @@
       ctx.beginPath(); ctx.arc(x, y, star.size, 0, TAU); ctx.fill();
     });
     ctx.globalAlpha = 1;
+  }
+
+  function buildMicroStarLayers(core, timestamp) {
+    if (!microStars.length) return null;
+    const makeLayer = () => ({
+      dots: Array.from({ length: MICRO_STAR_COLORS.length * 3 }, () => new Path2D()),
+      links: Array.from({ length: MICRO_STAR_COLORS.length }, () => new Path2D())
+    });
+    const layers = { back: makeLayer(), front: makeLayer() };
+    const positions = new Array(microStars.length);
+    const slowFactor = data.visual.speed * (motionPreference === "reduced" ? 0.3 : 1);
+    for (let index = 0; index < microStars.length; index++) {
+      const star = microStars[index];
+      const cluster = microStarClusters[star.clusterId];
+      const angle = cluster.phase + timestamp * cluster.speed * slowFactor;
+      const cosAngle = Math.cos(angle), sinAngle = Math.sin(angle);
+      const cosOffset = Math.cos(star.angleOffset), sinOffset = Math.sin(star.angleOffset);
+      const radius = Math.max(1, cluster.radius + star.radiusOffset) * data.visual.zoom;
+      const planeX = radius * (cosAngle * cosOffset - sinAngle * sinOffset);
+      const planeY = radius * (sinAngle * cosOffset + cosAngle * sinOffset);
+      const x = planeX * cluster.cosNode - planeY * cluster.cosInclination * cluster.sinNode;
+      const y = planeX * cluster.sinNode + planeY * cluster.cosInclination * cluster.cosNode;
+      const z = planeY * cluster.sinInclination;
+      const point = projectScenePoint(core.x, core.y, x, y, z, timestamp);
+      positions[index] = point;
+      const layer = point.depth > 0 ? layers.back : layers.front;
+      const twinkle = 0.5 + 0.5 * Math.sin(timestamp * star.twinkleSpeed + star.phase);
+      const brightness = Math.min(2, Math.floor(twinkle * 3));
+      const pointRadius = star.size * (0.72 + twinkle * 0.48);
+      const path = layer.dots[star.color * 3 + brightness];
+      path.moveTo(point.x + pointRadius, point.y);
+      path.arc(point.x, point.y, pointRadius, 0, TAU);
+
+      if (star.member > 0 && star.member % 3 === 0) {
+        const previous = positions[index - 1];
+        if (previous && (previous.depth > 0) === (point.depth > 0)) {
+          const link = layer.links[star.color];
+          link.moveTo(previous.x, previous.y);
+          link.lineTo(point.x, point.y);
+        }
+      }
+    }
+    return layers;
+  }
+
+  function drawMicroStarLayer(layer) {
+    if (!layer) return;
+    ctx.save();
+    ctx.lineWidth = 0.45;
+    ctx.lineCap = "round";
+    for (let color = 0; color < MICRO_STAR_COLORS.length; color++) {
+      ctx.globalAlpha = 0.11;
+      ctx.strokeStyle = MICRO_STAR_COLORS[color];
+      ctx.stroke(layer.links[color]);
+    }
+    const opacity = [0.2, 0.34, 0.5];
+    for (let index = 0; index < layer.dots.length; index++) {
+      ctx.globalAlpha = opacity[index % 3];
+      ctx.fillStyle = MICRO_STAR_COLORS[Math.floor(index / 3)];
+      ctx.fill(layer.dots[index]);
+    }
+    ctx.restore();
   }
 
   function drawRotatingStarSphere(timestamp) {
@@ -1132,6 +1237,8 @@
     const absorbing = openTasks.filter((task) => taskPhase(task, wallTime) === "elapsed" && wallTime - taskDeadline(task) < 1750);
     const active = visible.concat(absorbing);
     const core = coreGeometry();
+    const microStarLayers = buildMicroStarLayers(core, timestamp);
+    drawMicroStarLayer(microStarLayers?.back);
     const mascot = mascotOrbitPosition(core, timestamp);
     nextPlanetHits.push({ kind: "mascot", id: MASCOT_ID, x: mascot.x, y: mascot.y, radius: 14 * data.visual.zoom * mascot.scale, depth: mascot.depth });
     let urgency = 0;
@@ -1159,19 +1266,21 @@
     drawCore(core, timestamp, urgency);
     front.forEach(({ task, index }) => drawTaskPlanet(task, index, core, timestamp, wallTime));
     if (mascot.depth <= 0) drawMascotPlanet(mascot, core, timestamp);
+    drawMicroStarLayer(microStarLayers?.front);
     const zoomTarget = data.visual.focusTaskId && data.visual.zoom >= 2.4
       ? nextPlanetHits.find((hit) => hit.id === data.visual.focusTaskId && hit.kind === "task")
       : null;
     if (zoomTarget) drawTaskDetailSatellites(zoomTarget.task, zoomTarget, timestamp, wallTime);
     planetHits = nextPlanetHits;
     detailHits = nextDetailHits;
-    if (DESKTOP_WIDGET && timestamp - lastPositionSent > 70) updateHitArea();
+    if (DESKTOP_WIDGET && timestamp - lastHitAreaSent > 70) updateHitArea();
     requestAnimationFrame(drawFrame);
   }
 
   function updateHitArea() {
     if (!DESKTOP_WIDGET || !window.qgScene?.setInputEnabled) return;
     const core = coreGeometry(); coreHit = { x: core.x, y: core.y, radius: core.radius * 1.18 };
+    lastHitAreaSent = performance.now();
   }
 
   function setWidgetInput(enabled) {
@@ -1241,7 +1350,6 @@
     coreTarget = { x: clamp(point.x / width, 0.07, 0.93), y: clamp(point.y / height, 0.09, 0.91) };
     data.visual.center = { ...coreTarget };
     if (!DESKTOP_WIDGET) save();
-    lastPositionSent = now();
   }
 
   function setCenterFromPointer(event) { setCenterFromPoint(pointerPoint(event)); }
@@ -1461,8 +1569,20 @@
   window.addEventListener("resize", () => { resizeCanvas(); applyPanelPosition(); }, { passive: true });
 
   if (window.qgScene) {
+    if (DESKTOP_WIDGET) {
+      window.qgScene.onWidgetPosition((position) => {
+        if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
+        data.visual.center = cleanVisual({ ...data.visual, center: position }).center;
+        data.visual.zoomPan = { x: 0, y: 0 };
+        coreTarget = { ...data.visual.center };
+        coreCurrent = { ...coreTarget };
+      });
+      window.qgScene.onMascotClick(() => handleMascotPlanetClick());
+    }
     window.qgScene.onSceneState((snapshot) => {
       if (!snapshot) return;
+      const previousStarCount = data.visual.stars;
+      const previousMicroStarCount = data.visual.microStarCount;
       if (Array.isArray(snapshot.subjects) && snapshot.subjects.length) data.subjects = snapshot.subjects.map(cleanSubject);
       else if (Array.isArray(snapshot.categories) && snapshot.categories.length) data.subjects = snapshot.categories.map((item) => Array.isArray(item) ? cleanSubject({ id: item[0], name: item[1], color: item[3] }) : cleanSubject(item));
       currentTasksSnapshot = Array.isArray(snapshot.tasks) ? snapshot.tasks.map((task) => cleanTask(task, data.subjects)) : [];
@@ -1471,7 +1591,9 @@
       if (settings.visual) data.visual = cleanVisual({ ...data.visual, ...settings.visual });
       if (settings.widgetPosition && Number.isFinite(settings.widgetPosition.x)) data.visual.center = cleanVisual({ ...data.visual, center: settings.widgetPosition }).center;
       if (Number.isFinite(settings.opacity)) document.documentElement.style.setProperty("--desktop-widget-opacity", clamp(settings.opacity, .25, 1));
-      coreCurrent = { ...data.visual.center }; coreTarget = { ...data.visual.center }; resizeCanvas();
+      if (data.visual.stars !== previousStarCount) createStars();
+      if (data.visual.microStarCount !== previousMicroStarCount) createMicroStars();
+      coreCurrent = { ...data.visual.center }; coreTarget = { ...data.visual.center };
     });
     if (DESKTOP_WIDGET) document.documentElement.classList.add("desktop-widget");
   }

@@ -13,6 +13,11 @@ contextBridge.exposeInMainWorld("qgScene", Object.freeze({
     ipcRenderer.on("qg:scene-state", listener);
     return () => ipcRenderer.removeListener("qg:scene-state", listener);
   },
+  onWidgetPosition: (handler) => {
+    const listener = (_event, position) => handler(position);
+    ipcRenderer.on("qg:scene-widget-position", listener);
+    return () => ipcRenderer.removeListener("qg:scene-widget-position", listener);
+  },
   setInputEnabled: () => ipcRenderer.send("qg:scene-input", true),
   setCoreDragArea: (area) => {
     if (!area || !Number.isFinite(area.x) || !Number.isFinite(area.y) || !Number.isFinite(area.radius)) return;

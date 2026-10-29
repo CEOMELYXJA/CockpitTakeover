@@ -233,6 +233,7 @@ if (process.argv.includes("--qg-ambient-host")) {
       planetScale: bounded(raw.planetScale, 0.55, 1.65, 1),
       speed: bounded(raw.speed, 0.2, 1.8, 0.72),
       stars: Math.round(bounded(raw.stars, 12, 64, 30)),
+      microStarCount: Math.round(bounded(raw.microStarCount, 0, 6000, 2200)),
       showOrbits: raw.showOrbits !== false,
       viewYaw: bounded(raw.viewYaw, 0, Math.PI * 2, 0),
       viewPitch: bounded(raw.viewPitch, -1.15, 1.15, 0),

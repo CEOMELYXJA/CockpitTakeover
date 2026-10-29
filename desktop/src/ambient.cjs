@@ -55,6 +55,13 @@ function widgetBounds(display) {
 }
 
 function physicalDisplayBounds(display) {
+  const hostBounds = scenes.find((window) => window.__qgDisplayId === display.id)?.__qgHostBounds
+    || chooseHost(cachedHosts, display)?.bounds;
+  if (hostBounds && Number.isFinite(hostBounds.x) && Number.isFinite(hostBounds.y)
+      && Number.isFinite(hostBounds.width) && Number.isFinite(hostBounds.height)
+      && hostBounds.width > 0 && hostBounds.height > 0) {
+    return { x: hostBounds.x, y: hostBounds.y, width: hostBounds.width, height: hostBounds.height };
+  }
   const scale = display.scaleFactor || 1;
   return {
     x: display.bounds.x * scale, y: display.bounds.y * scale,
@@ -130,6 +137,14 @@ function broadcastState() {
   for (const window of scenes) if (!window.isDestroyed() && !window.webContents.isLoading()) window.webContents.send("qg:scene-state", sceneSnapshot(window));
 }
 
+function broadcastWidgetPosition() {
+  for (const window of scenes) {
+    if (!window.isDestroyed() && !window.webContents.isLoading()) {
+      window.webContents.send("qg:scene-widget-position", sceneWidgetPosition(window));
+    }
+  }
+}
+
 function notifyUnavailable(message) {
   reportStatus("unavailable", message);
   const now = Date.now();
@@ -154,6 +169,8 @@ function createScene(display, desktopHost) {
   const nativeWindowHandle = window.getNativeWindowHandle();
   window.__qgNativeHandle = nativeWindowHandle;
   window.__qgHandle = nativeWindowHandle.readBigUInt64LE(0).toString();
+  window.__qgDisplayId = display.id;
+  window.__qgHostBounds = desktopHost.bounds;
   window.setIgnoreMouseEvents(true, { forward: true });
   window.setFocusable(false);
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -169,7 +186,6 @@ function createScene(display, desktopHost) {
       if (!nativeHost) throw new Error("Le module Windows de la couche arrière n’est pas disponible.");
       const currentDisplay = screen.getAllDisplays().find((item) => item.id === display.id) || display;
       const currentBounds = widgetBounds(currentDisplay);
-      window.__qgDisplayId = display.id;
       window.__qgIconView = desktopHost.iconView;
       nativeHost.attachToDesktop(
         nativeWindowHandle,
@@ -267,11 +283,11 @@ ipcMain.on("qg:scene-hit-area", (event, area) => {
   const display = screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
   if (!display) return;
   const scale = display.scaleFactor || 1;
-  const bounds = display.bounds;
+  const bounds = physicalDisplayBounds(display);
   try {
     nativeHost.setCoreDragArea(window.__qgNativeHandle, nativeHandleBuffer(window.__qgIconView), {
-      x: (bounds.x + area.x) * scale,
-      y: (bounds.y + area.y) * scale,
+      x: bounds.x + area.x * scale,
+      y: bounds.y + area.y * scale,
       radius: area.radius * scale
     });
   } catch (error) {
@@ -353,17 +369,7 @@ function pollCoreDrag() {
       drag.coreOriginY + deltaY
     );
     snapshot.settings = { ...snapshot.settings, widgetDesktopPosition: nextPosition };
-    for (const scene of scenes) {
-      if (scene.isDestroyed() || scene.webContents.isLoading()) continue;
-      const display = screen.getAllDisplays().find((item) => item.id === scene.__qgDisplayId);
-      if (!display) continue;
-      const bounds = physicalDisplayBounds(display);
-      scene.webContents.send("qg:scene-core-drag", {
-        phase: drag.phase,
-        deltaX: deltaX / bounds.width,
-        deltaY: deltaY / bounds.height
-      });
-    }
+    broadcastWidgetPosition();
     if (drag.phase === "end") sendToParent({ type: "widget-position", payload: nextPosition });
   }
 }
