@@ -102,6 +102,7 @@ LRESULT CALLBACK CoreDragMouseHook(int code, WPARAM message, LPARAM data) {
       return 1;
     }
   } else if (message == WM_MOUSEMOVE) {
+    // Record the drag while letting Windows continue to process mouse movement.
     std::lock_guard<std::mutex> lock(g_dragMutex);
     if (g_draggingChild) {
       if (!g_dragEvents.empty() && g_dragEvents.back().child == g_draggingChild && g_dragEvents.back().phase == 1) {
@@ -109,7 +110,6 @@ LRESULT CALLBACK CoreDragMouseHook(int code, WPARAM message, LPARAM data) {
       } else {
         g_dragEvents.push_back({ g_draggingChild, mouse->pt, g_dragOrigin, 1 });
       }
-      return 1;
     }
   } else if (message == WM_RBUTTONUP) {
     std::lock_guard<std::mutex> lock(g_dragMutex);

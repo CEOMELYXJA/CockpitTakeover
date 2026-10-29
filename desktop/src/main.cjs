@@ -30,6 +30,7 @@ if (process.argv.includes("--qg-ambient-host")) {
   const MAX_TASKS = 500;
   let tray = null;
   let panel = null;
+  let panelBoundsSaveTimer = null;
   let pinballWindow = null;
   let ambientProcess = null;
   let ambientRestartTimer = null;
@@ -85,7 +86,11 @@ if (process.argv.includes("--qg-ambient-host")) {
     const next = input && typeof input === "object" ? input : {};
     const bounds = next.panelBounds && typeof next.panelBounds === "object" ? next.panelBounds : null;
     const validBounds = bounds && [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)
-      ? { x: Math.round(bounds.x), y: Math.round(bounds.y), width: 420, height: 740 } : null;
+      ? {
+        x: Math.round(bounds.x), y: Math.round(bounds.y),
+        width: Math.max(320, Math.min(900, Math.round(bounds.width))),
+        height: Math.max(440, Math.min(1200, Math.round(bounds.height)))
+      } : null;
     const position = next.widgetPosition && typeof next.widgetPosition === "object" ? next.widgetPosition : null;
     const widgetPosition = position && Number.isFinite(position.x) && Number.isFinite(position.y)
       ? { x: Math.max(0.07, Math.min(0.93, Number(position.x))), y: Math.max(0.09, Math.min(0.91, Number(position.y))) } : null;
@@ -130,6 +135,25 @@ if (process.argv.includes("--qg-ambient-host")) {
     const write = settingsWriteQueue.then(() => atomicWrite(settingsPath, snapshot));
     settingsWriteQueue = write.catch(() => {});
     return write;
+  }
+
+  function savePanelBoundsSoon() {
+    if (!panel || panel.isDestroyed()) return;
+    settings.panelBounds = panel.getBounds();
+    if (panelBoundsSaveTimer) clearTimeout(panelBoundsSaveTimer);
+    panelBoundsSaveTimer = setTimeout(() => {
+      panelBoundsSaveTimer = null;
+      queueSettingsWrite().catch((error) => console.error("Panel bounds save failed:", error.message));
+    }, 220);
+    panelBoundsSaveTimer.unref?.();
+  }
+
+  function savePanelBoundsNow() {
+    if (panelBoundsSaveTimer) clearTimeout(panelBoundsSaveTimer);
+    panelBoundsSaveTimer = null;
+    if (!panel || panel.isDestroyed()) return;
+    settings.panelBounds = panel.getBounds();
+    queueSettingsWrite().catch((error) => console.error("Panel bounds save failed:", error.message));
   }
 
   async function readJson(file, fallback) {
@@ -387,9 +411,11 @@ if (process.argv.includes("--qg-ambient-host")) {
   function placePanel() {
     if (!panel || panel.isDestroyed()) return;
     const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-    const width = 420;
-    const height = Math.min(740, area.height - 24);
     const saved = settings.panelBounds;
+    const maxWidth = Math.max(240, area.width - 24);
+    const maxHeight = Math.max(320, area.height - 24);
+    const width = Math.max(Math.min(360, maxWidth), Math.min(saved?.width || 420, maxWidth));
+    const height = Math.max(Math.min(480, maxHeight), Math.min(saved?.height || 740, maxHeight));
     let x = saved ? saved.x : (settings.side === "left" ? area.x + 16 : area.x + area.width - width - 16);
     let y = saved ? saved.y : area.y + Math.max(12, Math.round((area.height - height) / 2));
     x = Math.max(area.x + 8, Math.min(x, area.x + area.width - width - 8));
@@ -429,9 +455,10 @@ if (process.argv.includes("--qg-ambient-host")) {
     panel.setAlwaysOnTop(true, "floating");
     panel.loadFile(path.join(__dirname, "panel.html"));
     panel.on("moved", () => {
-      if (!panel || panel.isDestroyed()) return;
-      settings.panelBounds = panel.getBounds();
-      queueSettingsWrite().catch((error) => console.error("Settings save failed:", error.message));
+      savePanelBoundsSoon();
+    });
+    panel.on("resize", () => {
+      savePanelBoundsSoon();
     });
     panel.on("closed", () => { panel = null; });
   }
@@ -486,7 +513,11 @@ if (process.argv.includes("--qg-ambient-host")) {
     ipcMain.handle("qg:site:sync-status", () => siteSyncStatus());
     ipcMain.handle("qg:ambient:restart", () => ({ ok: restartAmbientHost(), enabled: settings.fieldEnabled }));
     ipcMain.handle("qg:settings:center-reset", async () => {
-      settings = cleanSettings({ ...settings, widgetPosition: siteSync.visual?.center || { x: 0.5, y: 0.53 } });
+      settings = cleanSettings({
+        ...settings,
+        widgetPosition: { x: 0.5, y: 0.53 },
+        widgetView: { viewYaw: 0, viewPitch: 0, zoom: 1, zoomPan: { x: 0, y: 0 }, focusTaskId: null }
+      });
       await queueSettingsWrite();
       syncViews();
       return settings.widgetPosition;
@@ -503,6 +534,26 @@ if (process.argv.includes("--qg-ambient-host")) {
     });
     ipcMain.handle("qg:site:open", () => shell.openExternal("https://ceomelyxja.github.io/CockpitTakeover/"));
     ipcMain.handle("qg:panel:close", () => { if (panel && !panel.isDestroyed()) panel.hide(); });
+    ipcMain.handle("qg:panel:bounds", () => panel && !panel.isDestroyed() ? panel.getBounds() : null);
+    ipcMain.on("qg:panel:resize", (event, request) => {
+      if (!panel || panel.isDestroyed() || event.sender !== panel.webContents || !request || !Number.isFinite(request.width) || !Number.isFinite(request.height)) return;
+      const current = panel.getBounds();
+      const area = screen.getDisplayMatching(current).workArea;
+      const maxWidth = Math.max(240, area.width - 16);
+      const maxHeight = Math.max(320, area.height - 16);
+      const minWidth = Math.min(360, maxWidth);
+      const minHeight = Math.min(480, maxHeight);
+      const width = Math.round(Math.max(minWidth, Math.min(maxWidth, request.width)));
+      const height = Math.round(Math.max(minHeight, Math.min(maxHeight, request.height)));
+      const maxX = area.x + area.width - width - 8;
+      const maxY = area.y + area.height - height - 8;
+      const x = Math.max(area.x + 8, Math.min(current.x, maxX));
+      const bottom = current.y + current.height;
+      const y = Math.max(area.y + 8, Math.min(bottom - height, maxY));
+      panel.setBounds({ x, y, width, height });
+      settings.panelBounds = panel.getBounds();
+      if (request.final) savePanelBoundsNow();
+    });
   }
 
   function trayMenu() {
@@ -630,3 +681,4 @@ if (process.argv.includes("--qg-ambient-host")) {
   });
   }
 }
+

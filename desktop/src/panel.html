@@ -12,7 +12,10 @@
   <main class="surface">
     <header class="masthead drag-region">
       <div class="brand"><span class="brand-mark" aria-hidden="true">DFC</span><div><p class="eyebrow">DUMBFUCKCOCKPIT · WINDOWS</p><h1>Widget de bureau</h1></div></div>
-      <button id="panelClose" class="icon-button no-drag" type="button" aria-label="Fermer les réglages" title="Fermer · le widget reste sur le bureau">×</button>
+      <div class="window-actions no-drag">
+        <button id="panelClose" class="icon-button" type="button" aria-label="Fermer les réglages" title="Fermer · le widget reste sur le bureau">×</button>
+        <button id="panelResize" class="panel-resize-handle" type="button" aria-label="Redimensionner le panneau" title="Glissez ce coin pour ajuster la taille">⤢</button>
+      </div>
     </header>
 
     <section class="system-strip" aria-label="État du widget">
@@ -28,7 +31,7 @@
       <label class="setting-row setting-check"><span><b>Afficher sur le bureau</b><small>Masquez ou réaffichez le visuel.</small></span><input id="settingFieldEnabled" type="checkbox" checked></label>
       <label class="setting-row setting-check"><span><b>Lancer avec Windows</b><small>Facultatif · désactivé par défaut.</small></span><input id="settingStartup" type="checkbox"></label>
       <button id="centerReset" class="repair-widget" type="button">Recentrer la planète principale</button>
-      <button id="repairWidget" class="repair-widget" type="button">Réafficher le widget</button>
+      <button id="repairWidget" class="repair-widget" type="button">Recharger le widget à sa position enregistrée</button>
       <button id="openWeb" class="open-cockpit" type="button">Ouvrir le site interactif ↗</button>
       <p class="fine-print">Pour voir le widget seul, fermez la fenêtre du site web.</p>
     </section>
@@ -39,3 +42,4 @@
   <script src="./panel.js"></script>
 </body>
 </html>
+

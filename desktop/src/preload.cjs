@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld("qgDesktop", Object.freeze({
   getAmbientStatus: () => ipcRenderer.invoke("qg:ambient:status"),
   restartAmbient: () => ipcRenderer.invoke("qg:ambient:restart"),
   resetWidgetPosition: () => ipcRenderer.invoke("qg:settings:center-reset"),
+  getPanelBounds: () => ipcRenderer.invoke("qg:panel:bounds"),
+  resizePanel: (size, final = false) => ipcRenderer.send("qg:panel:resize", { width: size.width, height: size.height, final }),
   getSiteSyncStatus: () => ipcRenderer.invoke("qg:site:sync-status"),
   onAmbientStatus: (handler) => {
     const listener = (_event, status) => handler(status);
@@ -46,3 +48,4 @@ contextBridge.exposeInMainWorld("qgDesktop", Object.freeze({
     return () => ipcRenderer.removeListener("qg:tasks:snapshot", listener);
   }
 }));
+

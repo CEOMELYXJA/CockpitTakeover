@@ -73,13 +73,49 @@
   byId("repairWidget").addEventListener("click", async () => {
     try {
       const result = await window.qgDesktop.restartAmbient();
-      toast(result.enabled ? "Le widget redémarre sur le bureau…" : "Activez d’abord « Afficher sur le bureau ». ");
+      toast(result.enabled ? "Le widget se recharge à sa position enregistrée…" : "Activez d’abord « Afficher sur le bureau ». ");
     } catch (error) { toast(`Le widget n’a pas pu redémarrer : ${error.message}`); }
   });
   byId("centerReset").addEventListener("click", async () => {
     try { await window.qgDesktop.resetWidgetPosition(); toast("La planète principale est recentrée."); }
     catch (error) { toast(`Position impossible à réinitialiser : ${error.message}`); }
   });
+  const resizeHandle = byId("panelResize");
+  let panelResize = null;
+  resizeHandle.addEventListener("pointerdown", async (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    try { resizeHandle.setPointerCapture(event.pointerId); } catch (_) {}
+    const bounds = await window.qgDesktop.getPanelBounds();
+    if (!bounds) return;
+    panelResize = {
+      pointerId: event.pointerId,
+      startX: event.screenX,
+      startY: event.screenY,
+      width: bounds.width,
+      height: bounds.height,
+      requestedWidth: bounds.width,
+      requestedHeight: bounds.height
+    };
+  });
+  resizeHandle.addEventListener("pointermove", (event) => {
+    if (!panelResize || event.pointerId !== panelResize.pointerId) return;
+    const width = panelResize.width + event.screenX - panelResize.startX;
+    const height = panelResize.height + panelResize.startY - event.screenY;
+    panelResize.requestedWidth = width;
+    panelResize.requestedHeight = height;
+    window.qgDesktop.resizePanel({ width, height });
+    event.preventDefault();
+  });
+  const finishPanelResize = (event) => {
+    if (!panelResize || (event && event.pointerId !== panelResize.pointerId)) return;
+    window.qgDesktop.resizePanel({ width: panelResize.requestedWidth, height: panelResize.requestedHeight }, true);
+    panelResize = null;
+  };
+  resizeHandle.addEventListener("pointerup", finishPanelResize);
+  resizeHandle.addEventListener("pointercancel", finishPanelResize);
+  resizeHandle.addEventListener("lostpointercapture", finishPanelResize);
   ["settingOpacity", "settingMotion", "settingFieldEnabled", "settingStartup"]
     .forEach((id) => byId(id).addEventListener("change", persistSettings));
   window.qgDesktop.onAmbientStatus(renderAmbientStatus);
@@ -88,3 +124,4 @@
   window.qgDesktop.getSiteSyncStatus().then(renderSiteSync);
   window.qgDesktop.getSettings().then((settings) => { state.settings = { ...state.settings, ...settings }; renderSettings(); });
 })();
+
