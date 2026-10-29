@@ -149,7 +149,7 @@
   let pinballMount = null;
   let playfulToastTimer = 0;
   let audioContext = null;
-  let width = 1, height = 1, ratio = 1, lastDraw = 0, lastPositionSent = 0;
+  let width = 1, height = 1, ratio = 1, lastDraw = 0, lastPositionSent = 0, projectionCache = null;
   let panelDrag = null;
   let currentTasksSnapshot = [];
   let motionPreference = "measured";
@@ -228,6 +228,7 @@
     byId("controlPanel").classList.toggle("is-collapsed", data.panelCollapsed);
     byId("panelClose").textContent = data.panelCollapsed ? "⌄" : "⌃";
     byId("panelClose").setAttribute("aria-label", data.panelCollapsed ? "Rouvrir le panneau" : "Réduire le panneau");
+    byId("panelClose").title = data.panelCollapsed ? "Rouvrir le panneau" : "Réduire le panneau";
     byId("panelKicker").textContent = isSettings ? "PERSONNALISATION" : "ESPACE ORBITAL";
     byId("panelTitle").textContent = isSettings ? "Réglages de la carte" : "Mes planètes";
     byId("panelContent").innerHTML = isSettings ? renderSettingsView() : renderTasksView();
@@ -545,7 +546,7 @@
   }
 
   function resizeCanvas() {
-    ratio = Math.min(window.devicePixelRatio || 1, DESKTOP_WIDGET ? 1.8 : 2);
+    ratio = Math.min(window.devicePixelRatio || 1, DESKTOP_WIDGET ? 1.25 : 1.5);
     width = Math.max(1, canvas.clientWidth || window.innerWidth);
     height = Math.max(1, canvas.clientHeight || window.innerHeight);
     canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
@@ -582,15 +583,16 @@
   }
 
   function projectScenePoint(cx, cy, x, y, z, timestamp) {
-    const yaw = 0.14 * Math.sin(timestamp * 0.000035) + data.visual.viewYaw;
-    const pitch = 0.48 + 0.035 * Math.sin(timestamp * 0.000021) + data.visual.viewPitch;
-    const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw);
+    if (!projectionCache || projectionCache.timestamp !== timestamp) {
+      const yaw = 0.14 * Math.sin(timestamp * 0.000035) + data.visual.viewYaw;
+      const pitch = 0.48 + 0.035 * Math.sin(timestamp * 0.000021) + data.visual.viewPitch;
+      projectionCache = { timestamp, cosYaw: Math.cos(yaw), sinYaw: Math.sin(yaw), cosPitch: Math.cos(pitch), sinPitch: Math.sin(pitch), focal: Math.max(420, Math.min(width, height) * 1.55) };
+    }
+    const { cosYaw, sinYaw, cosPitch, sinPitch, focal } = projectionCache;
     const rotatedX = x * cosYaw + z * sinYaw;
     const rotatedZ = -x * sinYaw + z * cosYaw;
-    const cosPitch = Math.cos(pitch), sinPitch = Math.sin(pitch);
     const rotatedY = y * cosPitch - rotatedZ * sinPitch;
     const depth = y * sinPitch + rotatedZ * cosPitch;
-    const focal = Math.max(420, Math.min(width, height) * 1.55);
     const perspective = clamp(focal / (focal + depth), 0.62, 1.58);
     return { x: cx + rotatedX * perspective, y: cy + rotatedY * perspective, scale: perspective, depth };
   }
@@ -607,7 +609,7 @@
   }
 
   function drawProjectedOrbit(core, radius, inclination, nodeAngle, color, alpha, timestamp, dashed = true) {
-    const segments = 88;
+    const segments = radius > Math.min(width, height) * .62 ? 64 : 48;
     ctx.save(); ctx.beginPath();
     for (let segment = 0; segment <= segments; segment++) {
       const point = orbitPoint(core, segment / segments * TAU, radius, inclination, nodeAngle, timestamp);
@@ -1015,14 +1017,15 @@
     playfulToastTimer = setTimeout(() => toast.classList.remove("is-visible"), 4200);
   }
 
-  function playRandomKlaxon() {
+  async function playRandomKlaxon() {
     const Audio = window.AudioContext || window.webkitAudioContext;
-    if (!Audio) return;
+    if (!Audio) return showPlayfulMessage("Le son n’est pas disponible dans ce navigateur.");
     try {
-      audioContext ||= new Audio();
-      if (audioContext.state === "suspended") audioContext.resume();
+      audioContext ||= new Audio({ latencyHint: "interactive" });
+      if (audioContext.state !== "running") await audioContext.resume();
+      if (audioContext.state !== "running") throw new Error("Le moteur audio ne s’est pas activé.");
       const sequence = KLAXON_NOTES[Math.floor(Math.random() * KLAXON_NOTES.length)];
-      const start = audioContext.currentTime + .015;
+      const start = audioContext.currentTime + .035;
       sequence.forEach((frequency, index) => {
         const onset = start + index * .18;
         const oscillator = audioContext.createOscillator();
@@ -1031,7 +1034,7 @@
         oscillator.frequency.setValueAtTime(frequency, onset);
         oscillator.frequency.exponentialRampToValueAtTime(frequency * (index === 1 ? .82 : 1.12), onset + .15);
         envelope.gain.setValueAtTime(.0001, onset);
-        envelope.gain.exponentialRampToValueAtTime(.12, onset + .018);
+        envelope.gain.exponentialRampToValueAtTime(.18, onset + .018);
         envelope.gain.exponentialRampToValueAtTime(.0001, onset + .16);
         oscillator.connect(envelope); envelope.connect(audioContext.destination);
         oscillator.start(onset); oscillator.stop(onset + .17);
@@ -1384,6 +1387,8 @@
     data.panelCollapsed = collapsed; save();
     byId("panelClose").textContent = collapsed ? "⌄" : "⌃";
     byId("panelClose").setAttribute("aria-label", collapsed ? "Rouvrir le panneau" : "Réduire le panneau");
+    byId("panelClose").title = collapsed ? "Rouvrir le panneau" : "Réduire le panneau";
+    if (!collapsed) applyPanelPosition();
   });
   const panelHeader = byId("panelHeader");
   panelHeader.addEventListener("pointerdown", (event) => {

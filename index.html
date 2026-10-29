@@ -23,6 +23,7 @@
       <nav class="main-nav" aria-label="Espace du cockpit">
         <button type="button" data-view="tasks" class="nav-button is-active">Planètes</button>
         <button type="button" data-view="settings" class="nav-button">Réglages</button>
+        <button id="panelClose" class="nav-button panel-toggle" type="button" aria-label="Réduire le panneau" title="Réduire le panneau">⌃</button>
       </nav>
       <div class="top-actions">
         <span id="syncBadge" class="sync-badge" aria-live="polite">Widget non synchronisé</span>
@@ -33,7 +34,7 @@
 
     <main class="workspace">
       <aside id="controlPanel" class="control-panel" aria-label="Commandes du cockpit">
-        <div class="panel-header" id="panelHeader" data-panel-drag><div><p class="eyebrow" id="panelKicker">VUE D’ENSEMBLE</p><h2 id="panelTitle">En orbite</h2></div><button id="panelClose" class="panel-close" type="button" aria-label="Réduire le panneau">⌃</button></div>
+        <div class="panel-header" id="panelHeader" data-panel-drag><div><p class="eyebrow" id="panelKicker">VUE D’ENSEMBLE</p><h2 id="panelTitle">En orbite</h2></div></div>
         <div id="panelContent" class="panel-content"></div>
       </aside>
     </main>
