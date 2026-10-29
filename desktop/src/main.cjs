@@ -4,6 +4,7 @@ const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, dialog, screen,
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const http = require("node:http");
 const { spawn } = require("node:child_process");
 
 if (process.argv.includes("--qg-ambient-host")) {
@@ -28,11 +29,17 @@ if (process.argv.includes("--qg-ambient-host")) {
   const durations = new Set([5, 15, 30, 60, 90]);
   const statuses = new Set(["inbox", "todo", "doing", "done", "archived"]);
   const MAX_TASKS = 500;
+  const SYNC_BRIDGE_HOST = "127.0.0.1";
+  const SYNC_BRIDGE_PORT = 43827;
+  const SYNC_BRIDGE_ORIGIN = "https://ceomelyxja.github.io";
+  const SYNC_BRIDGE_PATH = "/api/widget-sync";
+  const MAX_SYNC_BODY_BYTES = 1_000_000;
   let tray = null;
   let panel = null;
   let panelBoundsSaveTimer = null;
   let pinballWindow = null;
   let ambientProcess = null;
+  let syncBridgeServer = null;
   let ambientRestartTimer = null;
   let ambientStatus = { status: "starting", message: "Démarrage du widget transparent…" };
   let tasksPath = "";
@@ -47,6 +54,7 @@ if (process.argv.includes("--qg-ambient-host")) {
   let tasksLoadedFromBackup = false;
   let taskWriteQueue = Promise.resolve();
   let settingsWriteQueue = Promise.resolve();
+  let siteSyncWriteQueue = Promise.resolve();
   let siteSyncPath = "";
   let downloadsPoll = null;
   let latestDownloadStamp = 0;
@@ -255,11 +263,18 @@ if (process.argv.includes("--qg-ambient-host")) {
 
   async function applySiteSync(value, stamp = 0) {
     const cleaned = cleanSiteSync(value);
-    siteSync = cleaned;
-    latestDownloadStamp = Math.max(latestDownloadStamp, stamp);
-    await atomicWrite(siteSyncPath, JSON.stringify(siteSync, null, 2));
-    sendAmbient("snapshot", ambientSnapshot());
-    broadcastSiteSyncStatus();
+    if (stamp && stamp <= latestDownloadStamp) return false;
+    if (stamp) latestDownloadStamp = stamp;
+    const write = siteSyncWriteQueue.then(async () => {
+      if (stamp && stamp < latestDownloadStamp) return false;
+      siteSync = cleaned;
+      await atomicWrite(siteSyncPath, JSON.stringify(siteSync, null, 2));
+      sendAmbient("snapshot", ambientSnapshot());
+      broadcastSiteSyncStatus();
+      return true;
+    });
+    siteSyncWriteQueue = write.catch(() => {});
+    return write;
   }
 
   async function pollSiteSync() {
@@ -276,8 +291,8 @@ if (process.argv.includes("--qg-ambient-host")) {
       }
       if (!newest) return;
       const parsed = JSON.parse(await fs.readFile(newest.file, "utf8"));
-      await applySiteSync(parsed, newest.stamp);
-      showShellNotice("Les rappels et réglages de Cockpit Takeover sont synchronisés avec le widget.");
+      const applied = await applySiteSync(parsed, newest.stamp);
+      if (applied) showShellNotice("Les rappels et réglages de Cockpit Takeover sont synchronisés avec le widget.");
     } catch (error) {
       if (error && error.code !== "ENOENT") console.error("Site sync scan failed:", error.message);
     }
@@ -287,6 +302,110 @@ if (process.argv.includes("--qg-ambient-host")) {
     pollSiteSync().catch((error) => console.error("Initial site sync scan failed:", error.message));
     downloadsPoll = setInterval(() => pollSiteSync(), 1800);
     downloadsPoll.unref?.();
+  }
+
+  function bridgeResponse(response, status, payload, origin) {
+    const headers = {
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json; charset=utf-8",
+      "X-Content-Type-Options": "nosniff"
+    };
+    if (origin === SYNC_BRIDGE_ORIGIN) {
+      headers["Access-Control-Allow-Origin"] = SYNC_BRIDGE_ORIGIN;
+      headers.Vary = "Origin";
+    }
+    response.writeHead(status, headers);
+    response.end(JSON.stringify(payload));
+  }
+
+  function startSyncBridge() {
+    if (syncBridgeServer) return;
+    const server = http.createServer((request, response) => {
+      const origin = request.headers.origin;
+      if (request.headers.host !== `${SYNC_BRIDGE_HOST}:${SYNC_BRIDGE_PORT}` || origin !== SYNC_BRIDGE_ORIGIN) {
+        bridgeResponse(response, 403, { ok: false, error: "Origine non autorisée." }, origin);
+        return;
+      }
+      if (request.url !== SYNC_BRIDGE_PATH) {
+        bridgeResponse(response, 404, { ok: false, error: "Route inconnue." }, origin);
+        return;
+      }
+      if (request.method === "OPTIONS") {
+        const method = request.headers["access-control-request-method"];
+        const headers = String(request.headers["access-control-request-headers"] || "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean);
+        if (method !== "POST" || headers.some((value) => value !== "content-type")) {
+          bridgeResponse(response, 403, { ok: false, error: "Requête non autorisée." }, origin);
+          return;
+        }
+        response.writeHead(204, {
+          "Access-Control-Allow-Origin": SYNC_BRIDGE_ORIGIN,
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "content-type",
+          "Access-Control-Max-Age": "600",
+          "Cache-Control": "no-store",
+          Vary: "Origin"
+        });
+        response.end();
+        return;
+      }
+      if (request.method !== "POST") {
+        bridgeResponse(response, 405, { ok: false, error: "Méthode non autorisée." }, origin);
+        return;
+      }
+      const contentType = String(request.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+      if (contentType !== "text/plain" && contentType !== "application/json") {
+        bridgeResponse(response, 415, { ok: false, error: "Format de données non pris en charge." }, origin);
+        return;
+      }
+      const declaredLength = Number(request.headers["content-length"]);
+      if (Number.isFinite(declaredLength) && declaredLength > MAX_SYNC_BODY_BYTES) {
+        bridgeResponse(response, 413, { ok: false, error: "La synchronisation dépasse la taille permise." }, origin);
+        request.resume();
+        return;
+      }
+      let size = 0;
+      let tooLarge = false;
+      const chunks = [];
+      request.on("data", (chunk) => {
+        if (tooLarge) return;
+        size += chunk.length;
+        if (size > MAX_SYNC_BODY_BYTES) {
+          tooLarge = true;
+          chunks.length = 0;
+          bridgeResponse(response, 413, { ok: false, error: "La synchronisation dépasse la taille permise." }, origin);
+          request.resume();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      request.on("end", async () => {
+        if (tooLarge) return;
+        let payload;
+        try { payload = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+        catch (_) { bridgeResponse(response, 400, { ok: false, error: "Le contenu reçu n’est pas un JSON valide." }, origin); return; }
+        try { cleanSiteSync(payload); }
+        catch (_) { bridgeResponse(response, 400, { ok: false, error: "Les données de Cockpit Takeover sont invalides." }, origin); return; }
+        const stamp = Math.max(Date.now(), latestDownloadStamp + 1);
+        try {
+          const applied = await applySiteSync(payload, stamp);
+          if (!applied) {
+            bridgeResponse(response, 409, { ok: false, error: "Une synchronisation plus récente a déjà été appliquée." }, origin);
+            return;
+          }
+          bridgeResponse(response, 200, { ok: true, ...siteSyncStatus() }, origin);
+        } catch (error) {
+          console.error("Direct site sync failed:", error.message);
+          bridgeResponse(response, 500, { ok: false, error: "Le widget n’a pas pu enregistrer la synchronisation." }, origin);
+        }
+      });
+    });
+    server.on("error", (error) => {
+      if (syncBridgeServer === server) syncBridgeServer = null;
+      console.error("Sync bridge failed:", error.message);
+      showShellNotice("Le lien direct de synchronisation n’a pas pu démarrer. Vérifiez qu’aucune autre application n’utilise le port local du widget.");
+    });
+    syncBridgeServer = server;
+    server.listen(SYNC_BRIDGE_PORT, SYNC_BRIDGE_HOST);
   }
 
   function setAmbientStatus(status, message) {
@@ -647,12 +766,16 @@ if (process.argv.includes("--qg-ambient-host")) {
     catch (error) { showShellNotice(`Les préférences n’ont pas pu être lues : ${error.message}`); }
     try {
       const savedSync = await readJson(siteSyncPath, null);
-      if (savedSync) siteSync = cleanSiteSync(savedSync);
+      if (savedSync) {
+        siteSync = cleanSiteSync(savedSync);
+        latestDownloadStamp = Date.now();
+      }
     } catch (error) { showShellNotice(`La dernière synchronisation du site n’a pas pu être lue : ${error.message}`); }
     app.setLoginItemSettings({ openAtLogin: settings.startWithWindows });
     await configureIpc();
     createTray();
     startSiteSyncWatcher();
+    startSyncBridge();
     if (settings.fieldEnabled) startAmbientHost(); else setAmbientStatus("hidden", "Widget transparent désactivé dans les préférences.");
     if (!globalShortcut.register("Control+Alt+Space", openPanel)) showShellNotice("Le raccourci Ctrl+Alt+Espace est déjà utilisé par une autre application.");
     globalShortcut.register("Control+Alt+Shift+Space", requestAmbientRebuild);
@@ -666,6 +789,7 @@ if (process.argv.includes("--qg-ambient-host")) {
   app.on("before-quit", () => {
     quitting = true;
     if (ambientRestartTimer) clearTimeout(ambientRestartTimer);
+    if (syncBridgeServer) { syncBridgeServer.close(); syncBridgeServer = null; }
     if (ambientProcess && ambientProcess.connected) {
       try { ambientProcess.send({ type: "shutdown" }); ambientProcess.disconnect(); }
       catch (_) { ambientProcess.kill(); }

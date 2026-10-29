@@ -307,7 +307,7 @@
     data.view = view; save(); render();
   }
 
-  function syncWidget() {
+  async function syncWidget() {
     const payload = {
       format: SYNC_FORMAT,
       version: 1,
@@ -316,14 +316,37 @@
       tasks: data.tasks.map((task) => ({ ...task })),
       visual: { ...data.visual, center: { ...data.visual.center } }
     };
-    const file = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(file);
-    const link = document.createElement("a");
-    link.href = url; link.download = "CockpitTakeover-widget.json"; link.style.display = "none";
-    document.body.appendChild(link); link.click(); link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    data.lastSync = payload.savedAt; save(); updateHeader();
-    showToast("Copie locale créée. Le widget la chargera depuis Téléchargements.");
+    try {
+      let permission = null;
+      if (navigator.permissions?.query) {
+        try { permission = await navigator.permissions.query({ name: "loopback-network" }); }
+        catch (_) {}
+      }
+      if (permission?.state === "denied") {
+        showToast("Chrome bloque l’accès local. Autorisez « Réseau en boucle locale » pour ce site, puis réessayez.");
+        return;
+      }
+      const response = await fetch("http://127.0.0.1:43827/api/widget-sync", {
+        method: "POST",
+        mode: "cors",
+        credentials: "omit",
+        cache: "no-store",
+        targetAddressSpace: "loopback",
+        headers: { "Content-Type": "text/plain;charset=UTF-8" },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) {
+        throw new Error(result?.error || `Pont local indisponible (${response.status}).`);
+      }
+      data.lastSync = payload.savedAt;
+      save();
+      updateHeader();
+      showToast("Synchronisation directe réussie.");
+    } catch (error) {
+      console.error("Direct widget sync failed:", error);
+      showToast("Ouvrez DumbFuckCockpit Widget 0.11.5 et autorisez son accès local dans Chrome, puis réessayez.");
+    }
   }
 
   function openFocusDialog() {
