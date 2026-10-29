@@ -1,7 +1,7 @@
-# Cockpit Takeover Widget 0.9.0
+# Cockpit Takeover Widget 0.10.0
 
-- Glissez avec le bouton gauche pour tourner la vue autour du noyau, même sans planète.
-- Sur écran tactile, un doigt fait tourner la vue; deux doigts permettent de zoomer et de déplacer la carte.
-- Le zoom, l’orientation et la position du noyau sont mémorisés sur le site et le widget Windows.
-- Le déplacement du noyau au bouton droit est conservé.
-- Le rendu, les menus, les rappels et les couleurs restent inchangés.
+- Le panneau est centré, déplaçable et conserve sa position.
+- La carte reçoit un champ d’étoiles 50 fois plus dense, rendu en couche pré-calculée pour préserver sa fluidité.
+- Les planètes acceptent jusqu’à 20 anneaux fins et translucides.
+- Les réglages du noyau central (couleur et relief) sont synchronisés avec le widget Windows.
+- La rotation, le mouvement orbital et le déplacement du noyau restent ceux du point de restauration 0.9.0.

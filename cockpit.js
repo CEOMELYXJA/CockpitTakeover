@@ -23,8 +23,8 @@
     { id: "admin", name: "Administration", description: "", color: "#c6ff55", size: 1, durationMinutes: 20 },
     { id: "personal", name: "Personnel", description: "", color: "#ad7bff", size: 1, durationMinutes: 25 }
   ];
-  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, showOrbits: true, center: { x: 0.5, y: 0.53 }, viewYaw: 0, viewPitch: 0, zoom: 1 };
-  const DEFAULT_STATE = { version: 1, view: "tasks", taskFilter: "open", panelCollapsed: false, subjects: DEFAULT_SUBJECTS.map((item) => ({ ...item })), tasks: [], visual: structuredClone(DEFAULT_VISUAL), lastSync: 0 };
+  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, showOrbits: true, center: { x: 0.5, y: 0.53 }, viewYaw: 0, viewPitch: 0, zoom: 1, coreColor: "#42dcff", coreCraters: "few" };
+  const DEFAULT_STATE = { version: 1, view: "tasks", taskFilter: "open", panelCollapsed: false, panelPosition: null, subjects: DEFAULT_SUBJECTS.map((item) => ({ ...item })), tasks: [], visual: structuredClone(DEFAULT_VISUAL), lastSync: 0 };
 
   function cleanSubject(value) {
     const input = value && typeof value === "object" ? value : {};
@@ -60,7 +60,7 @@
       topicName: String(input.topicName || input.categoryName || legacySubject?.name || "").trim().slice(0, 48),
       planetColor: rawColor ? (LEGACY_COLORS[rawColor] || rawColor) : legacySubject?.color || "#42dcff",
       planetSize: clamp(input.planetSize ?? legacySubject?.size ?? 1, 0.55, 1.65),
-      ringCount: Math.round(clamp(input.ringCount ?? 1, 0, 5)),
+      ringCount: Math.round(clamp(input.ringCount ?? 1, 0, 20)),
       ringsGlow: input.ringsGlow !== false,
       ringsRocky: Boolean(input.ringsRocky),
       status,
@@ -86,8 +86,15 @@
       center: { x: clamp(center.x ?? 0.5, 0.08, 0.92), y: clamp(center.y ?? 0.53, 0.1, 0.9) },
       viewYaw: ((Number(source.viewYaw) || 0) % TAU + TAU) % TAU,
       viewPitch: clamp(source.viewPitch ?? 0, -1.15, 1.15),
-      zoom: clamp(source.zoom ?? 1, 0.65, 2.25)
+      zoom: clamp(source.zoom ?? 1, 0.65, 2.25),
+      coreColor: /^#[0-9a-fA-F]{6}$/.test(String(source.coreColor || "")) ? String(source.coreColor).toLowerCase() : DEFAULT_VISUAL.coreColor,
+      coreCraters: ["none", "few", "many", "everest"].includes(source.coreCraters) ? source.coreCraters : DEFAULT_VISUAL.coreCraters
     };
+  }
+
+  function cleanPanelPosition(value) {
+    if (!value || typeof value !== "object" || !Number.isFinite(Number(value.x)) || !Number.isFinite(Number(value.y))) return null;
+    return { x: clamp(value.x, 0, 1), y: clamp(value.y, 0, 1) };
   }
 
   function loadState() {
@@ -98,7 +105,7 @@
       const seen = new Set();
       const uniqueSubjects = subjects.filter((subject) => { if (seen.has(subject.id)) subject.id = makeId(); seen.add(subject.id); return true; });
       const tasks = raw.tasks.slice(0, 500).map((task) => cleanTask(task, uniqueSubjects)).filter((task) => task.title);
-      return { ...structuredClone(DEFAULT_STATE), view: raw.view === "settings" ? "settings" : "tasks", taskFilter: ["open", "elapsed", "done", "all"].includes(raw.taskFilter) ? raw.taskFilter : "open", panelCollapsed: Boolean(raw.panelCollapsed), subjects: uniqueSubjects, tasks, visual: cleanVisual(raw.visual), lastSync: Number(raw.lastSync) || 0 };
+      return { ...structuredClone(DEFAULT_STATE), view: raw.view === "settings" ? "settings" : "tasks", taskFilter: ["open", "elapsed", "done", "all"].includes(raw.taskFilter) ? raw.taskFilter : "open", panelCollapsed: Boolean(raw.panelCollapsed), panelPosition: cleanPanelPosition(raw.panelPosition), subjects: uniqueSubjects, tasks, visual: cleanVisual(raw.visual), lastSync: Number(raw.lastSync) || 0 };
     } catch (_) { return structuredClone(DEFAULT_STATE); }
   }
 
@@ -115,11 +122,14 @@
   let coreTarget = { ...data.visual.center };
   let coreHit = { x: 0, y: 0, radius: 0 };
   let width = 1, height = 1, ratio = 1, lastDraw = 0, lastPositionSent = 0;
+  let panelDrag = null;
   let currentTasksSnapshot = [];
   let motionPreference = "measured";
   const canvas = byId("universeCanvas");
   const ctx = canvas.getContext("2d", { alpha: true, desynchronized: true });
   let stars = [];
+  let starLayer = null;
+  let starAnchor = { x: 0, y: 0 };
 
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
@@ -193,7 +203,36 @@
     byId("panelKicker").textContent = isSettings ? "PERSONNALISATION" : "ESPACE ORBITAL";
     byId("panelTitle").textContent = isSettings ? "Réglages de la carte" : "Mes planètes";
     byId("panelContent").innerHTML = isSettings ? renderSettingsView() : renderTasksView();
+    applyPanelPosition();
     updateHeader();
+  }
+
+  function applyPanelPosition() {
+    const panel = byId("controlPanel");
+    if (!panel) return;
+    const viewportWidth = Math.max(1, window.innerWidth), viewportHeight = Math.max(1, window.innerHeight);
+    const insetX = Math.min(0.48, (panel.offsetWidth / 2 + 10) / viewportWidth);
+    const insetY = Math.min(0.48, (panel.offsetHeight / 2 + 10) / viewportHeight);
+    const desired = cleanPanelPosition(data.panelPosition) || { x: 0.5, y: 0.5 };
+    const position = { x: clamp(desired.x, insetX, 1 - insetX), y: clamp(desired.y, insetY, 1 - insetY) };
+    panel.style.setProperty("--panel-center-x", `${position.x * 100}%`);
+    panel.style.setProperty("--panel-center-y", `${position.y * 100}%`);
+  }
+
+  function movePanel(event) {
+    if (!panelDrag || event.pointerId !== panelDrag.pointerId) return;
+    const panel = byId("controlPanel");
+    const x = panelDrag.x + (event.clientX - panelDrag.pointerX) / Math.max(1, window.innerWidth);
+    const y = panelDrag.y + (event.clientY - panelDrag.pointerY) / Math.max(1, window.innerHeight);
+    data.panelPosition = { x: clamp(x, 0, 1), y: clamp(y, 0, 1) };
+    applyPanelPosition();
+    event.preventDefault();
+  }
+
+  function finishPanelDrag(event) {
+    if (!panelDrag || (event && event.pointerId !== panelDrag.pointerId)) return;
+    panelDrag = null;
+    save();
   }
 
   function renderTasksView() {
@@ -208,7 +247,7 @@
     const defaultDeadline = toDateTimeLocal(now() + 60 * 60_000);
     const newColor = NEON_COLORS[data.tasks.length % NEON_COLORS.length];
     const orbitCount = Math.min(data.visual.planetCount, data.tasks.filter((task) => !["done", "archived"].includes(task.status) && taskPhase(task) !== "elapsed").length);
-    return `<section class="panel-section new-planet-section"><div class="section-heading-row"><h3 class="section-title">Nouvelle planète</h3><span class="section-count">${orbitCount} en orbite</span></div><form id="taskForm" class="form-grid"><label class="field wide">Qu’est-ce que vous voulez garder en vue ?<input name="title" maxlength="180" required placeholder="Appeler Alex, remettre un projet, faire une commission…"></label><label class="field wide">Contexte, prochaine étape ou résultat souhaité<textarea name="description" maxlength="700" placeholder="Une personne, une activité, une idée, un rendez-vous, un problème à régler…"></textarea></label><label class="field">Repère facultatif<input name="topicName" maxlength="48" placeholder="Projet, personne, lieu…"></label><label class="field">Échéance — date et heure<input name="deadlineAt" type="datetime-local" value="${defaultDeadline}" required></label><label class="field planet-color-field">Couleur<input name="planetColor" type="color" value="${newColor}"></label><label class="field planet-size-field">Taille <span class="field-value" data-new-size-output>100%</span><input name="planetSize" type="range" min="0.55" max="1.65" step="0.05" value="1"></label><details class="visual-options wide"><summary>Anneaux et effet électroluminescent</summary><div class="form-grid visual-option-fields"><label class="field">Nombre d’anneaux<input name="ringCount" type="number" min="0" max="5" value="1"></label><label class="field inline-choice"><span>Anneaux lumineux</span><input name="ringsGlow" type="checkbox" checked></label><label class="field inline-choice"><span>Anneaux rocheux</span><input name="ringsRocky" type="checkbox"></label></div></details><label class="field wide start-option"><span class="inline-row"><input name="startNow" type="checkbox" checked><span>Démarrer le décompte dès son ajout</span></span></label><button class="primary-button wide" type="submit">＋ Ajouter à ma carte</button></form><button class="file-label import-button" type="button" data-action="import-file">Importer une liste .txt, .md ou .json</button></section><section class="panel-section planet-list-section"><div class="list-heading"><h3 class="section-title">Planètes <small>${data.tasks.length}</small></h3><label class="filter-select-label">Afficher<select data-task-filter><option value="open" ${filter === "open" ? "selected" : ""}>À traiter</option><option value="elapsed" ${filter === "elapsed" ? "selected" : ""}>Échéance dépassée</option><option value="done" ${filter === "done" ? "selected" : ""}>Terminées</option><option value="all" ${filter === "all" ? "selected" : ""}>Toutes</option></select></label></div>${filtered.map(taskCard).join("") || `<div class="empty-card"><b>Votre carte est prête</b>Ajoutez-y une idée, un rendez-vous, un appel, un projet ou toute autre chose que vous voulez garder en vue.</div>`}</section>`;
+    return `<section class="panel-section new-planet-section"><div class="section-heading-row"><h3 class="section-title">Nouvelle planète</h3><span class="section-count">${orbitCount} en orbite</span></div><form id="taskForm" class="form-grid"><label class="field wide">Qu’est-ce que vous voulez garder en vue ?<input name="title" maxlength="180" required placeholder="Appeler Alex, remettre un projet, faire une commission…"></label><label class="field wide">Contexte, prochaine étape ou résultat souhaité<textarea name="description" maxlength="700" placeholder="Une personne, une activité, une idée, un rendez-vous, un problème à régler…"></textarea></label><label class="field">Repère facultatif<input name="topicName" maxlength="48" placeholder="Projet, personne, lieu…"></label><label class="field">Échéance — date et heure<input name="deadlineAt" type="datetime-local" value="${defaultDeadline}" required></label><label class="field planet-color-field">Couleur<input name="planetColor" type="color" value="${newColor}"></label><label class="field planet-size-field">Taille <span class="field-value" data-new-size-output>100%</span><input name="planetSize" type="range" min="0.55" max="1.65" step="0.05" value="1"></label><details class="visual-options wide"><summary>Anneaux et effet électroluminescent</summary><div class="form-grid visual-option-fields"><label class="field">Nombre d’anneaux<input name="ringCount" type="number" min="0" max="20" value="1"></label><label class="field inline-choice"><span>Anneaux lumineux</span><input name="ringsGlow" type="checkbox" checked></label><label class="field inline-choice"><span>Anneaux rocheux</span><input name="ringsRocky" type="checkbox"></label></div></details><label class="field wide start-option"><span class="inline-row"><input name="startNow" type="checkbox" checked><span>Démarrer le décompte dès son ajout</span></span></label><button class="primary-button wide" type="submit">＋ Ajouter à ma carte</button></form><button class="file-label import-button" type="button" data-action="import-file">Importer une liste .txt, .md ou .json</button></section><section class="panel-section planet-list-section"><div class="list-heading"><h3 class="section-title">Planètes <small>${data.tasks.length}</small></h3><label class="filter-select-label">Afficher<select data-task-filter><option value="open" ${filter === "open" ? "selected" : ""}>À traiter</option><option value="elapsed" ${filter === "elapsed" ? "selected" : ""}>Échéance dépassée</option><option value="done" ${filter === "done" ? "selected" : ""}>Terminées</option><option value="all" ${filter === "all" ? "selected" : ""}>Toutes</option></select></label></div>${filtered.map(taskCard).join("") || `<div class="empty-card"><b>Votre carte est prête</b>Ajoutez-y une idée, un rendez-vous, un appel, un projet ou toute autre chose que vous voulez garder en vue.</div>`}</section>`;
   }
 
   function taskCard(task) {
@@ -220,11 +259,11 @@
     const note = elapsed ? `Cette échéance est passée (${formatDueDate(taskDeadline(task))}). Le rappel demeure ouvert.` : task.description;
     const action = elapsed ? `<button class="small-button primary" data-action="restart-task" data-id="${escapeHtml(task.id)}">Replanifier</button>` : task.status === "queued" ? `<button class="small-button primary" data-action="start-task" data-id="${escapeHtml(task.id)}">Démarrer</button>` : task.status === "active" ? `<button class="small-button" data-action="complete-task" data-id="${escapeHtml(task.id)}">Terminer</button>` : `<button class="small-button" data-action="restore-task" data-id="${escapeHtml(task.id)}">Rouvrir</button>`;
     const deadline = taskDeadline(task);
-    return `<article class="planet-card ${elapsed ? "is-elapsed" : ""} ${done ? "is-done" : ""}" data-planet-card="${escapeHtml(task.id)}"><div class="planet-card-head"><span class="planet-swatch" style="--planet-color:${color}"></span><div class="planet-card-name"><h4>${escapeHtml(task.title)}</h4><span>${escapeHtml(task.topicName || "Planète")}</span></div><span class="planet-timer">${escapeHtml(timeLabel(task))}</span></div><div class="planet-card-meta"><span class="deadline-label">${deadline ? `Échéance · ${escapeHtml(formatDueDate(deadline))}` : "Échéance à définir"}</span></div>${note ? `<p class="planet-note">${escapeHtml(note)}</p>` : ""}${elapsed ? `<label class="field planet-reason-field">Note pour reprendre plus facilement<textarea data-task-field="reason" data-id="${escapeHtml(task.id)}" maxlength="300" placeholder="Qu’est-ce qui reste à faire ?">${escapeHtml(task.reason)}</textarea></label>` : ""}<div class="planet-actions">${action}<button class="small-button archive-button" data-action="archive-task" data-id="${escapeHtml(task.id)}">Archiver</button></div><details class="planet-editor"><summary>Modifier cette planète</summary><div class="form-grid planet-editor-fields"><label class="field wide">Nom<input data-task-field="title" data-id="${escapeHtml(task.id)}" maxlength="180" value="${escapeHtml(task.title)}"></label><label class="field">Repère facultatif<input data-task-field="topicName" data-id="${escapeHtml(task.id)}" maxlength="48" value="${escapeHtml(task.topicName || "")}" placeholder="Projet, personne, lieu…"></label><label class="field">Échéance — date et heure<input data-task-field="deadlineAt" data-id="${escapeHtml(task.id)}" type="datetime-local" value="${deadline ? toDateTimeLocal(deadline) : ""}"></label><label class="field planet-color-field">Couleur<input data-task-field="planetColor" data-id="${escapeHtml(task.id)}" type="color" value="${color}"></label><label class="field planet-size-field">Taille<input data-task-field="planetSize" data-id="${escapeHtml(task.id)}" type="range" min="0.55" max="1.65" step="0.05" value="${task.planetSize || legacy?.size || 1}"></label><label class="field wide">Contexte ou détail<textarea data-task-field="description" data-id="${escapeHtml(task.id)}" maxlength="700">${escapeHtml(task.description)}</textarea></label><label class="field wide">Note<textarea data-task-field="reason" data-id="${escapeHtml(task.id)}" maxlength="300">${escapeHtml(task.reason)}</textarea></label><details class="visual-options wide"><summary>Anneaux et matière</summary><div class="form-grid visual-option-fields"><label class="field">Nombre d’anneaux<input data-task-field="ringCount" data-id="${escapeHtml(task.id)}" type="number" min="0" max="5" value="${task.ringCount}"></label><label class="field inline-choice"><span>Anneaux lumineux</span><input data-task-field="ringsGlow" data-id="${escapeHtml(task.id)}" type="checkbox" ${task.ringsGlow ? "checked" : ""}></label><label class="field inline-choice"><span>Anneaux rocheux</span><input data-task-field="ringsRocky" data-id="${escapeHtml(task.id)}" type="checkbox" ${task.ringsRocky ? "checked" : ""}></label></div></details></div></details></article>`;
+    return `<article class="planet-card ${elapsed ? "is-elapsed" : ""} ${done ? "is-done" : ""}" data-planet-card="${escapeHtml(task.id)}"><div class="planet-card-head"><span class="planet-swatch" style="--planet-color:${color}"></span><div class="planet-card-name"><h4>${escapeHtml(task.title)}</h4><span>${escapeHtml(task.topicName || "Planète")}</span></div><span class="planet-timer">${escapeHtml(timeLabel(task))}</span></div><div class="planet-card-meta"><span class="deadline-label">${deadline ? `Échéance · ${escapeHtml(formatDueDate(deadline))}` : "Échéance à définir"}</span></div>${note ? `<p class="planet-note">${escapeHtml(note)}</p>` : ""}${elapsed ? `<label class="field planet-reason-field">Note pour reprendre plus facilement<textarea data-task-field="reason" data-id="${escapeHtml(task.id)}" maxlength="300" placeholder="Qu’est-ce qui reste à faire ?">${escapeHtml(task.reason)}</textarea></label>` : ""}<div class="planet-actions">${action}<button class="small-button archive-button" data-action="archive-task" data-id="${escapeHtml(task.id)}">Archiver</button></div><details class="planet-editor"><summary>Modifier cette planète</summary><div class="form-grid planet-editor-fields"><label class="field wide">Nom<input data-task-field="title" data-id="${escapeHtml(task.id)}" maxlength="180" value="${escapeHtml(task.title)}"></label><label class="field">Repère facultatif<input data-task-field="topicName" data-id="${escapeHtml(task.id)}" maxlength="48" value="${escapeHtml(task.topicName || "")}" placeholder="Projet, personne, lieu…"></label><label class="field">Échéance — date et heure<input data-task-field="deadlineAt" data-id="${escapeHtml(task.id)}" type="datetime-local" value="${deadline ? toDateTimeLocal(deadline) : ""}"></label><label class="field planet-color-field">Couleur<input data-task-field="planetColor" data-id="${escapeHtml(task.id)}" type="color" value="${color}"></label><label class="field planet-size-field">Taille<input data-task-field="planetSize" data-id="${escapeHtml(task.id)}" type="range" min="0.55" max="1.65" step="0.05" value="${task.planetSize || legacy?.size || 1}"></label><label class="field wide">Contexte ou détail<textarea data-task-field="description" data-id="${escapeHtml(task.id)}" maxlength="700">${escapeHtml(task.description)}</textarea></label><label class="field wide">Note<textarea data-task-field="reason" data-id="${escapeHtml(task.id)}" maxlength="300">${escapeHtml(task.reason)}</textarea></label><details class="visual-options wide"><summary>Anneaux et matière</summary><div class="form-grid visual-option-fields"><label class="field">Nombre d’anneaux<input data-task-field="ringCount" data-id="${escapeHtml(task.id)}" type="number" min="0" max="20" value="${task.ringCount}"></label><label class="field inline-choice"><span>Anneaux lumineux</span><input data-task-field="ringsGlow" data-id="${escapeHtml(task.id)}" type="checkbox" ${task.ringsGlow ? "checked" : ""}></label><label class="field inline-choice"><span>Anneaux rocheux</span><input data-task-field="ringsRocky" data-id="${escapeHtml(task.id)}" type="checkbox" ${task.ringsRocky ? "checked" : ""}></label></div></details></div></details></article>`;
   }
   function renderSettingsView() {
     const v = data.visual;
-    return `<section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, il la récupère automatiquement depuis Téléchargements.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
+    return `<section class="panel-section settings-section"><h3 class="section-title">Noyau central</h3><label class="view-row"><span>Couleur du noyau<small>La sphère centrale et son halo.</small></span><input data-visual="coreColor" type="color" value="${v.coreColor}"></label><label class="view-row"><span>Relief et cratères<small>Choisissez une surface de la lune géante.</small></span><select data-visual="coreCraters"><option value="none" ${v.coreCraters === "none" ? "selected" : ""}>Aucun</option><option value="few" ${v.coreCraters === "few" ? "selected" : ""}>Quelques cratères</option><option value="many" ${v.coreCraters === "many" ? "selected" : ""}>Beaucoup de cratères</option><option value="everest" ${v.coreCraters === "everest" ? "selected" : ""}>Mont Everest — grand relief</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, elle se met à jour automatiquement.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
   }
   function updateHeader() {
     const badge = byId("syncBadge");
@@ -320,7 +359,7 @@
     const input = event.target;
     if (input.matches("[data-visual]")) {
       const key = input.dataset.visual;
-      data.visual[key] = input.type === "checkbox" ? input.checked : Number(input.value);
+      data.visual[key] = input.type === "checkbox" ? input.checked : input.type === "color" || key === "coreCraters" ? input.value : Number(input.value);
       if (key === "stars") createStars();
       const output = document.querySelector(`[data-output="${key}"]`);
       if (output) output.textContent = key === "planetScale" ? `${Math.round(data.visual[key] * 100)}%` : key === "speed" ? `${data.visual[key].toFixed(2)}×` : String(data.visual[key]);
@@ -332,7 +371,7 @@
       if (!task) return;
       const key = input.dataset.taskField;
       if (key === "planetSize") task[key] = clamp(input.value, 0.55, 1.65);
-      else if (key === "ringCount") task[key] = Math.round(clamp(input.value, 0, 5));
+      else if (key === "ringCount") task[key] = Math.round(clamp(input.value, 0, 20));
       else if (key === "ringsGlow" || key === "ringsRocky") task[key] = input.checked;
       else if (key === "deadlineAt") task.deadlineAt = input.value ? new Date(input.value).getTime() : null;
       else task[key] = input.value;
@@ -452,8 +491,29 @@
   }
 
   function createStars() {
-    const total = Math.round(clamp(data.visual.stars, 12, 64));
-    stars = Array.from({ length: total }, (_, index) => ({ x: Math.random(), y: Math.random(), size: 0.38 + Math.random() * 0.85, phase: Math.random() * TAU, alpha: 0.18 + Math.random() * 0.4, slow: 0.5 + Math.random() * 1.1, index }));
+    const baseCount = Math.round(clamp(data.visual.stars, 12, 64));
+    const total = baseCount * 50;
+    starAnchor = { x: width * coreCurrent.x, y: height * coreCurrent.y };
+    starLayer = document.createElement("canvas");
+    const starRatio = Math.min(ratio, 1);
+    starLayer.width = Math.max(1, Math.round(width * starRatio));
+    starLayer.height = Math.max(1, Math.round(height * starRatio));
+    const layerCtx = starLayer.getContext("2d", { alpha: true });
+    layerCtx.setTransform(starRatio, 0, 0, starRatio, 0, 0);
+    const span = Math.min(width, height);
+    for (let index = 0; index < total; index++) {
+      const angle = Math.random() * TAU;
+      const distance = Math.random() < 0.14 ? span * (0.12 + Math.random() * 0.72) : span * (0.025 + Math.pow(Math.random(), 1.8) * 0.64);
+      const x = starAnchor.x + Math.cos(angle) * distance;
+      const y = starAnchor.y + Math.sin(angle) * distance * (0.62 + Math.random() * 0.2);
+      const size = 0.28 + Math.random() * 0.62;
+      layerCtx.globalAlpha = 0.13 + Math.random() * 0.32;
+      layerCtx.fillStyle = "#f7fbff";
+      layerCtx.beginPath(); layerCtx.arc(x, y, size, 0, TAU); layerCtx.fill();
+    }
+    layerCtx.globalAlpha = 1;
+    const movingCount = Math.min(150, Math.max(48, Math.round(baseCount * 2.2)));
+    stars = Array.from({ length: movingCount }, (_, index) => ({ orbit: span * (0.04 + Math.pow(Math.random(), 1.55) * 0.55), phase: Math.random() * TAU, size: 0.38 + Math.random() * 0.7, alpha: 0.12 + Math.random() * 0.25, speed: (0.000009 + Math.random() * 0.000015) * (index % 3 ? 1 : -1), squash: 0.62 + Math.random() * 0.2 }));
   }
 
   function resizeCanvas() {
@@ -462,6 +522,7 @@
     height = Math.max(1, canvas.clientHeight || window.innerHeight);
     canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    createStars();
     if (DESKTOP_WIDGET) updateHitArea();
   }
 
@@ -470,13 +531,18 @@
   }
 
   function drawStars(timestamp) {
+    const coreX = width * coreCurrent.x, coreY = height * coreCurrent.y;
+    if (starLayer) {
+      ctx.save(); ctx.translate(coreX, coreY); ctx.scale(data.visual.zoom, data.visual.zoom);
+      ctx.drawImage(starLayer, -starAnchor.x, -starAnchor.y, width, height); ctx.restore();
+    }
     stars.forEach((star) => {
-      const twinkle = 0.57 + 0.43 * Math.sin(timestamp * 0.00055 * star.slow + star.phase);
-      const drift = timestamp * 0.0000018 * star.slow + star.phase;
-      const x = star.x * width + Math.cos(drift) * 1.35, y = star.y * height + Math.sin(drift) * 1.35;
-      const radius = star.size * (0.8 + 0.2 * twinkle);
-      ctx.globalAlpha = star.alpha * twinkle;
-      ctx.fillStyle = "#f5f5ef"; ctx.beginPath(); ctx.arc(x, y, radius, 0, TAU); ctx.fill();
+      const angle = timestamp * star.speed * data.visual.speed + star.phase + data.visual.viewYaw * 0.12;
+      const x = coreX + Math.cos(angle) * star.orbit * data.visual.zoom;
+      const y = coreY + Math.sin(angle) * star.orbit * star.squash * data.visual.zoom;
+      const twinkle = 0.65 + 0.35 * Math.sin(timestamp * 0.0007 + star.phase);
+      ctx.globalAlpha = star.alpha * twinkle; ctx.fillStyle = "#f7fbff";
+      ctx.beginPath(); ctx.arc(x, y, star.size, 0, TAU); ctx.fill();
     });
     ctx.globalAlpha = 1;
   }
@@ -548,8 +614,9 @@
     const pulseRate = (urgency > 0.72 ? 1.1 : 0.42) * (reduced ? 0.45 : 1);
     const pulseAmount = (urgency > 0.72 ? 0.022 : 0.008) * (reduced ? 0.5 : 1);
     const radius = core.radius * (1 + pulseAmount * Math.sin(timestamp * 0.001 * TAU * pulseRate));
+    const coreColor = data.visual.coreColor;
     const halo = ctx.createRadialGradient(core.x, core.y, radius * .28, core.x, core.y, radius * 2.75);
-    halo.addColorStop(0, "rgba(66,220,255,.2)"); halo.addColorStop(.28, "rgba(139,121,255,.105)"); halo.addColorStop(.65, "rgba(255,79,200,.035)"); halo.addColorStop(1, "rgba(66,220,255,0)");
+    halo.addColorStop(0, colorWithAlpha(coreColor, .2)); halo.addColorStop(.28, "rgba(139,121,255,.105)"); halo.addColorStop(.65, "rgba(255,79,200,.035)"); halo.addColorStop(1, colorWithAlpha(coreColor, 0));
     ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(core.x, core.y, radius * 2.75, 0, TAU); ctx.fill();
 
     const pulse = 1 + .016 * Math.sin(timestamp * .0017);
@@ -560,9 +627,10 @@
     });
     ctx.setLineDash([]); ctx.restore();
 
+    const baselineCore = coreColor === "#42dcff";
     const surface = ctx.createRadialGradient(core.x - radius * .34, core.y - radius * .42, radius * .04, core.x + radius * .24, core.y + radius * .24, radius * 1.18);
-    surface.addColorStop(0, "#f2ffff"); surface.addColorStop(.09, "#b8fbff"); surface.addColorStop(.26, "#43d7ff"); surface.addColorStop(.58, "#2679a8"); surface.addColorStop(.84, "#18304f"); surface.addColorStop(1, "#09101f");
-    ctx.save(); ctx.shadowColor = "rgba(66,220,255,.48)"; ctx.shadowBlur = radius * .48;
+    surface.addColorStop(0, "#f2ffff"); surface.addColorStop(.09, baselineCore ? "#b8fbff" : tintColor(coreColor, .62)); surface.addColorStop(.26, coreColor); surface.addColorStop(.58, baselineCore ? "#2679a8" : tintColor(coreColor, -.32)); surface.addColorStop(.84, baselineCore ? "#18304f" : tintColor(coreColor, -.65)); surface.addColorStop(1, "#09101f");
+    ctx.save(); ctx.shadowColor = colorWithAlpha(coreColor, .48); ctx.shadowBlur = radius * .48;
     ctx.fillStyle = surface; ctx.beginPath(); ctx.arc(core.x, core.y, radius, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
     ctx.save(); ctx.beginPath(); ctx.arc(core.x, core.y, radius * .99, 0, TAU); ctx.clip();
     const plasma = ctx.createLinearGradient(core.x - radius, core.y + radius * .25, core.x + radius, core.y - radius * .2);
@@ -570,46 +638,81 @@
     ctx.fillStyle = plasma; ctx.fillRect(core.x - radius, core.y - radius, radius * 2, radius * 2);
     ctx.globalAlpha = .2; ctx.strokeStyle = "#e7ffff"; ctx.lineWidth = Math.max(.7, radius * .025);
     [-.42, -.17, .12, .39].forEach((offset, index) => { ctx.beginPath(); ctx.ellipse(core.x, core.y + radius * offset, radius * .92, radius * (.12 + index * .012), -.08, .08, Math.PI * .92); ctx.stroke(); });
+    drawCoreCraters(core, radius, data.visual.coreCraters, coreColor);
     ctx.restore();
     ctx.strokeStyle = "rgba(200,250,255,.72)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(core.x, core.y, radius, -.92, 1.78); ctx.stroke();
     ctx.restore();
     coreHit = { x: core.x, y: core.y, radius: radius * 1.18 };
   }
 
+  function rgbFromHex(hex) {
+    const value = /^#[0-9a-f]{6}$/i.test(hex) ? hex.slice(1) : "42dcff";
+    return [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16));
+  }
+
+  function colorWithAlpha(hex, alpha) {
+    const [red, green, blue] = rgbFromHex(hex);
+    return `rgba(${red},${green},${blue},${alpha})`;
+  }
+
+  function tintColor(hex, amount) {
+    const [red, green, blue] = rgbFromHex(hex);
+    const target = amount >= 0 ? 255 : 8;
+    const strength = Math.abs(amount);
+    return `#${[red, green, blue].map((channel) => Math.round(channel + (target - channel) * strength).toString(16).padStart(2, "0")).join("")}`;
+  }
+
+  function drawCoreCraters(core, radius, style, color) {
+    if (style === "none") return;
+    const craters = [
+      [-.56,-.28,.071],[-.29,-.51,.058],[.06,-.58,.069],[.4,-.43,.082],[.57,-.11,.054],[-.48,.12,.09],[-.16,-.05,.062],[.19,-.19,.067],[.48,.19,.073],[-.35,.43,.061],[-.02,.48,.075],[.28,.47,.05],[-.64,.04,.044],[.02,.2,.051],[.63,.04,.052],[-.02,-.37,.046],[.35,-.05,.051],[-.5,-.49,.045],[.57,-.32,.044],[-.23,.28,.052],[.12,.57,.043],[-.52,.35,.042],[.43,.39,.041],[-.32,-.2,.039]
+    ];
+    const count = style === "few" ? 6 : style === "many" ? 24 : 9;
+    ctx.save();
+    for (const [nx, ny, scale] of craters.slice(0, count)) {
+      const x = core.x + nx * radius, y = core.y + ny * radius, size = scale * radius;
+      const rotation = (nx - ny) * 0.75;
+      ctx.globalAlpha = .43;
+      ctx.fillStyle = "rgba(4,9,20,.46)";
+      ctx.beginPath(); ctx.ellipse(x, y, size * 1.25, size * .78, rotation, 0, TAU); ctx.fill();
+      ctx.globalAlpha = .43; ctx.strokeStyle = colorWithAlpha(color, .48); ctx.lineWidth = Math.max(.65, radius * .012);
+      ctx.beginPath(); ctx.ellipse(x - size * .08, y - size * .07, size * 1.1, size * .7, rotation, Math.PI * 1.04, Math.PI * 1.92); ctx.stroke();
+      ctx.globalAlpha = .36; ctx.strokeStyle = "rgba(3,7,15,.7)";
+      ctx.beginPath(); ctx.ellipse(x + size * .06, y + size * .05, size * .78, size * .48, rotation, -.1, Math.PI * .92); ctx.stroke();
+    }
+    if (style === "everest") {
+      const x = core.x - radius * .16, y = core.y - radius * .11, basin = radius * .29;
+      ctx.globalAlpha = .5; ctx.fillStyle = "rgba(4,8,18,.58)";
+      ctx.beginPath(); ctx.ellipse(x, y, basin * 1.2, basin * .78, -.24, 0, TAU); ctx.fill();
+      ctx.globalAlpha = .72; ctx.strokeStyle = colorWithAlpha(color, .8); ctx.lineWidth = Math.max(1, radius * .022);
+      ctx.beginPath(); ctx.ellipse(x, y - basin * .035, basin, basin * .62, -.24, Math.PI * 1.04, Math.PI * 1.92); ctx.stroke();
+      ctx.globalAlpha = .8;
+      const peak = ctx.createLinearGradient(x, y - basin * .75, x, y + basin * .48);
+      peak.addColorStop(0, "#f5ffff"); peak.addColorStop(.32, tintColor(color, .58)); peak.addColorStop(1, tintColor(color, -.45));
+      ctx.fillStyle = peak; ctx.strokeStyle = "rgba(245,252,255,.72)"; ctx.lineWidth = Math.max(.7, radius * .012);
+      ctx.beginPath(); ctx.moveTo(x - basin * .54, y + basin * .43); ctx.lineTo(x - basin * .3, y - basin * .16); ctx.lineTo(x - basin * .08, y + basin * .02); ctx.lineTo(x + basin * .14, y - basin * .72); ctx.lineTo(x + basin * .26, y - basin * .24); ctx.lineTo(x + basin * .5, y + basin * .43); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
+
   function drawPlanetRings(x, y, radius, color, count, glowing, rocky, rotation, fade, timestamp) {
     if (!count) return;
     ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation * .22 + data.visual.viewYaw * .4);
+    const rockStep = Math.max(1, Math.ceil(count / 7));
     for (let ring = 0; ring < count; ring++) {
-      const rx = radius * (1.62 + ring * .27);
-      const ry = radius * (.42 + ring * .035);
-      const lineColor = glowing ? `${color}bb` : "rgba(203,221,236,.58)";
-      ctx.globalAlpha = fade * (glowing ? .82 : .58);
-      ctx.strokeStyle = lineColor; ctx.lineWidth = Math.max(.55, radius * .055);
-      if (glowing) { ctx.shadowColor = `${color}aa`; ctx.shadowBlur = radius * .28; }
-      const inclination = .34 + ring * .14;
-      const points = 56;
-      ctx.beginPath();
-      for (let step = 0; step <= points; step++) {
-        const angle = rotation + step / points * TAU;
-        const px = Math.cos(angle) * rx;
-        const py = Math.sin(angle) * ry * Math.cos(inclination);
-        const pz = Math.sin(angle) * ry * Math.sin(inclination);
-        const point = projectScenePoint(x, y, px, py, pz, timestamp);
-        if (!step) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y);
-      }
-      ctx.stroke(); ctx.shadowBlur = 0;
-      if (rocky) {
-        const stones = Math.max(3, 7 - ring);
-        for (let stone = 0; stone < stones; stone++) {
-          const angle = (stone / stones) * TAU + ring * 1.13;
-          const px = Math.cos(angle + rotation) * rx;
-          const py = Math.sin(angle + rotation) * ry * Math.cos(inclination);
-          const pz = Math.sin(angle + rotation) * ry * Math.sin(inclination);
-          const point = projectScenePoint(x, y, px, py, pz, timestamp);
-          const size = Math.max(.7, radius * (.035 + ((stone + ring) % 3) * .012));
-          ctx.fillStyle = (stone + ring) % 3 ? "#b8c7d6" : "#f4e8c9";
-          ctx.globalAlpha = fade * .78; ctx.beginPath(); ctx.arc(point.x, point.y, size * point.scale, 0, TAU); ctx.fill();
-        }
+      const rx = radius * (1.52 + ring * .056);
+      const ry = radius * (.39 + ring * .011);
+      const shade = ring % 3 === 0 ? 1 : ring % 3 === 1 ? .72 : .48;
+      ctx.globalAlpha = fade * (glowing ? .34 : .2) * shade;
+      ctx.strokeStyle = glowing ? color : "#dceaff";
+      ctx.lineWidth = Math.max(.38, radius * .009);
+      ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, Math.sin(rotation + ring * .08) * .025, 0, TAU); ctx.stroke();
+      if (rocky && ring % rockStep === 0) {
+        const angle = ring * 2.399 + rotation;
+        ctx.fillStyle = color; ctx.globalAlpha = fade * .35;
+        ctx.beginPath(); ctx.arc(Math.cos(angle) * rx, Math.sin(angle) * ry, Math.max(.45, radius * .018), 0, TAU); ctx.fill();
       }
     }
     ctx.restore(); ctx.globalAlpha = 1;
@@ -650,7 +753,7 @@
       ctx.restore(); return;
     }
     const glow = ctx.createRadialGradient(x, y, 0, x, y, radius * 3.35); glow.addColorStop(0, `${color}66`); glow.addColorStop(.32, `${color}30`); glow.addColorStop(1, `${color}00`); ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(x, y, radius * 3.35, 0, TAU); ctx.fill();
-    drawPlanetRings(x, y, radius, color, Math.round(clamp(task.ringCount ?? 1, 0, 5)), task.ringsGlow !== false, Boolean(task.ringsRocky), angle * .16 + timestamp * .00008, fade, timestamp);
+    drawPlanetRings(x, y, radius, color, Math.round(clamp(task.ringCount ?? 1, 0, 20)), task.ringsGlow !== false, Boolean(task.ringsRocky), angle * .16 + timestamp * .00008, fade, timestamp);
     ctx.shadowColor = `${color}dd`; ctx.shadowBlur = 11 * data.visual.planetScale;
     const spin = timestamp * .00019 + index * 1.7;
     const highlightX = Math.cos(spin) * radius * .12;
@@ -772,7 +875,7 @@
 
   function beginTouchGesture(event) {
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest("button,input,select,textarea,a,summary,[data-action]")) return;
+    if (target?.closest("button,input,select,textarea,a,summary,[data-action],[data-panel-drag]")) return;
     if (event.touches.length >= 2) {
       const [first, second] = [event.touches[0], event.touches[1]].map(pointFromTouch);
       touchGesture = {
@@ -910,6 +1013,18 @@
     byId("panelClose").textContent = collapsed ? "⌄" : "⌃";
     byId("panelClose").setAttribute("aria-label", collapsed ? "Rouvrir le panneau" : "Réduire le panneau");
   });
+  const panelHeader = byId("panelHeader");
+  panelHeader.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || event.target.closest("button")) return;
+    const rect = byId("controlPanel").getBoundingClientRect();
+    panelDrag = { pointerId: event.pointerId, pointerX: event.clientX, pointerY: event.clientY, x: (rect.left + rect.width / 2) / Math.max(1, window.innerWidth), y: (rect.top + rect.height / 2) / Math.max(1, window.innerHeight) };
+    try { panelHeader.setPointerCapture(event.pointerId); } catch (_) {}
+    event.preventDefault();
+  });
+  panelHeader.addEventListener("pointermove", movePanel);
+  panelHeader.addEventListener("pointerup", finishPanelDrag);
+  panelHeader.addEventListener("pointercancel", finishPanelDrag);
+  panelHeader.addEventListener("lostpointercapture", finishPanelDrag);
   byId("taskImport").addEventListener("change", (event) => { readImportFile(event.target.files?.[0]).catch(() => showToast("Le fichier n’a pas pu être lu.")); event.target.value = ""; });
   document.addEventListener("click", (event) => {
     const button = event.target.closest("[data-action]"); if (!button) return;
@@ -918,7 +1033,7 @@
     if (action === "apply-import") applyImport();
     if (action === "close-import") importDialog?.close();
   });
-  window.addEventListener("resize", resizeCanvas, { passive: true });
+  window.addEventListener("resize", () => { resizeCanvas(); applyPanelPosition(); }, { passive: true });
 
   if (window.qgScene) {
     window.qgScene.onSceneState((snapshot) => {
@@ -931,12 +1046,12 @@
       if (settings.visual) data.visual = cleanVisual({ ...data.visual, ...settings.visual });
       if (settings.widgetPosition && Number.isFinite(settings.widgetPosition.x)) data.visual.center = cleanVisual({ ...data.visual, center: settings.widgetPosition }).center;
       if (Number.isFinite(settings.opacity)) document.documentElement.style.setProperty("--desktop-widget-opacity", clamp(settings.opacity, .25, 1));
-      coreCurrent = { ...data.visual.center }; coreTarget = { ...data.visual.center }; createStars(); resizeCanvas();
+      coreCurrent = { ...data.visual.center }; coreTarget = { ...data.visual.center }; resizeCanvas();
     });
     if (DESKTOP_WIDGET) document.documentElement.classList.add("desktop-widget");
   }
 
-  createStars(); resizeCanvas(); render();
+  resizeCanvas(); render();
   if (!DESKTOP_WIDGET) setInterval(() => {
     updateHeader();
     document.querySelectorAll("[data-planet-card]").forEach((card) => {

@@ -170,7 +170,7 @@ if (process.argv.includes("--qg-ambient-host")) {
         topicName: safeText(item.topicName || legacySubject?.name, 48),
         planetColor: cleanColor(item.planetColor || item.color, legacySubject?.color || "#42dcff"),
         planetSize: Number.isFinite(Number(item.planetSize)) ? Math.max(0.55, Math.min(1.65, Number(item.planetSize))) : (legacySubject?.size || 1),
-        ringCount: Math.round(Math.max(0, Math.min(5, Number(item.ringCount ?? 1) || 0))),
+        ringCount: Math.round(Math.max(0, Math.min(20, Number(item.ringCount ?? 1) || 0))),
         ringsGlow: item.ringsGlow !== false,
         ringsRocky: Boolean(item.ringsRocky),
         status: ["queued", "active", "done", "archived"].includes(item.status) ? item.status : "queued",
@@ -195,6 +195,8 @@ if (process.argv.includes("--qg-ambient-host")) {
       viewYaw: bounded(raw.viewYaw, 0, Math.PI * 2, 0),
       viewPitch: bounded(raw.viewPitch, -1.15, 1.15, 0),
       zoom: bounded(raw.zoom, 0.65, 2.25, 1),
+      coreColor: /^#[0-9a-fA-F]{6}$/.test(String(raw.coreColor || "")) ? String(raw.coreColor).toLowerCase() : "#42dcff",
+      coreCraters: ["none", "few", "many", "everest"].includes(raw.coreCraters) ? raw.coreCraters : "few",
       center: { x: bounded(center.x, 0.08, 0.92, 0.5), y: bounded(center.y, 0.1, 0.9, 0.53) }
     };
     return { subjects, tasks, visual, savedAt: Number(value.savedAt) || Date.now() };
