@@ -138,9 +138,10 @@
   function taskPhase(task, timestamp = now()) {
     if (task.status === "done") return "done";
     if (task.status === "archived") return "archived";
-    if (task.status !== "active" || !task.startedAt) return "queued";
     const deadline = taskDeadline(task);
-    return deadline && timestamp >= deadline ? "elapsed" : "running";
+    if (deadline && timestamp >= deadline) return "elapsed";
+    if (task.status !== "active" || !task.startedAt) return "queued";
+    return "running";
   }
   function taskDeadline(task) { return Number(task.deadlineAt) > 0 ? Number(task.deadlineAt) : null; }
   function taskWindow(task) { const deadline = taskDeadline(task); return deadline ? Math.max(1, deadline - (task.startedAt || task.createdAt || now())) : Math.max(1, Number(task.durationMinutes || 25) * 60_000); }
@@ -201,7 +202,8 @@
     }).sort((a, b) => (taskDeadline(a) || Infinity) - (taskDeadline(b) || Infinity));
     const defaultDeadline = toDateTimeLocal(now() + 60 * 60_000);
     const newColor = NEON_COLORS[data.tasks.length % NEON_COLORS.length];
-    return `<section class="panel-section new-planet-section"><div class="section-heading-row"><h3 class="section-title">Nouvelle planète</h3><span class="section-count">${data.tasks.filter((task) => task.status === "active" && taskPhase(task) === "running").length} en orbite</span></div><form id="taskForm" class="form-grid"><label class="field wide">Qu’est-ce que vous voulez garder en vue ?<input name="title" maxlength="180" required placeholder="Appeler Alex, remettre un projet, faire une commission…"></label><label class="field wide">Contexte, prochaine étape ou résultat souhaité<textarea name="description" maxlength="700" placeholder="Une personne, une activité, une idée, un rendez-vous, un problème à régler…"></textarea></label><label class="field">Repère facultatif<input name="topicName" maxlength="48" placeholder="Projet, personne, lieu…"></label><label class="field">Échéance — date et heure<input name="deadlineAt" type="datetime-local" value="${defaultDeadline}" required></label><label class="field planet-color-field">Couleur<input name="planetColor" type="color" value="${newColor}"></label><label class="field planet-size-field">Taille <span class="field-value" data-new-size-output>100%</span><input name="planetSize" type="range" min="0.55" max="1.65" step="0.05" value="1"></label><details class="visual-options wide"><summary>Anneaux et effet électroluminescent</summary><div class="form-grid visual-option-fields"><label class="field">Nombre d’anneaux<input name="ringCount" type="number" min="0" max="5" value="1"></label><label class="field inline-choice"><span>Anneaux lumineux</span><input name="ringsGlow" type="checkbox" checked></label><label class="field inline-choice"><span>Anneaux rocheux</span><input name="ringsRocky" type="checkbox"></label></div></details><label class="field wide start-option"><span class="inline-row"><input name="startNow" type="checkbox" checked><span>La mettre en orbite dès son ajout</span></span></label><button class="primary-button wide" type="submit">＋ Ajouter à ma carte</button></form><button class="file-label import-button" type="button" data-action="import-file">Importer une liste .txt, .md ou .json</button></section><section class="panel-section planet-list-section"><div class="list-heading"><h3 class="section-title">Planètes <small>${data.tasks.length}</small></h3><label class="filter-select-label">Afficher<select data-task-filter><option value="open" ${filter === "open" ? "selected" : ""}>À traiter</option><option value="elapsed" ${filter === "elapsed" ? "selected" : ""}>Échéance dépassée</option><option value="done" ${filter === "done" ? "selected" : ""}>Terminées</option><option value="all" ${filter === "all" ? "selected" : ""}>Toutes</option></select></label></div>${filtered.map(taskCard).join("") || `<div class="empty-card"><b>Votre carte est prête</b>Ajoutez-y une idée, un rendez-vous, un appel, un projet ou toute autre chose que vous voulez garder en vue.</div>`}</section>`;
+    const orbitCount = Math.min(data.visual.planetCount, data.tasks.filter((task) => !["done", "archived"].includes(task.status) && taskPhase(task) !== "elapsed").length);
+    return `<section class="panel-section new-planet-section"><div class="section-heading-row"><h3 class="section-title">Nouvelle planète</h3><span class="section-count">${orbitCount} en orbite</span></div><form id="taskForm" class="form-grid"><label class="field wide">Qu’est-ce que vous voulez garder en vue ?<input name="title" maxlength="180" required placeholder="Appeler Alex, remettre un projet, faire une commission…"></label><label class="field wide">Contexte, prochaine étape ou résultat souhaité<textarea name="description" maxlength="700" placeholder="Une personne, une activité, une idée, un rendez-vous, un problème à régler…"></textarea></label><label class="field">Repère facultatif<input name="topicName" maxlength="48" placeholder="Projet, personne, lieu…"></label><label class="field">Échéance — date et heure<input name="deadlineAt" type="datetime-local" value="${defaultDeadline}" required></label><label class="field planet-color-field">Couleur<input name="planetColor" type="color" value="${newColor}"></label><label class="field planet-size-field">Taille <span class="field-value" data-new-size-output>100%</span><input name="planetSize" type="range" min="0.55" max="1.65" step="0.05" value="1"></label><details class="visual-options wide"><summary>Anneaux et effet électroluminescent</summary><div class="form-grid visual-option-fields"><label class="field">Nombre d’anneaux<input name="ringCount" type="number" min="0" max="5" value="1"></label><label class="field inline-choice"><span>Anneaux lumineux</span><input name="ringsGlow" type="checkbox" checked></label><label class="field inline-choice"><span>Anneaux rocheux</span><input name="ringsRocky" type="checkbox"></label></div></details><label class="field wide start-option"><span class="inline-row"><input name="startNow" type="checkbox" checked><span>Démarrer le décompte dès son ajout</span></span></label><button class="primary-button wide" type="submit">＋ Ajouter à ma carte</button></form><button class="file-label import-button" type="button" data-action="import-file">Importer une liste .txt, .md ou .json</button></section><section class="panel-section planet-list-section"><div class="list-heading"><h3 class="section-title">Planètes <small>${data.tasks.length}</small></h3><label class="filter-select-label">Afficher<select data-task-filter><option value="open" ${filter === "open" ? "selected" : ""}>À traiter</option><option value="elapsed" ${filter === "elapsed" ? "selected" : ""}>Échéance dépassée</option><option value="done" ${filter === "done" ? "selected" : ""}>Terminées</option><option value="all" ${filter === "all" ? "selected" : ""}>Toutes</option></select></label></div>${filtered.map(taskCard).join("") || `<div class="empty-card"><b>Votre carte est prête</b>Ajoutez-y une idée, un rendez-vous, un appel, un projet ou toute autre chose que vous voulez garder en vue.</div>`}</section>`;
   }
 
   function taskCard(task) {
@@ -211,7 +213,7 @@
     const done = phase === "done" || phase === "archived";
     const color = task.planetColor || legacy?.color || "#42dcff";
     const note = elapsed ? `Cette échéance est passée (${formatDueDate(taskDeadline(task))}). Le rappel demeure ouvert.` : task.description;
-    const action = task.status === "queued" ? `<button class="small-button primary" data-action="start-task" data-id="${escapeHtml(task.id)}">Démarrer</button>` : elapsed ? `<button class="small-button primary" data-action="restart-task" data-id="${escapeHtml(task.id)}">Replanifier</button>` : task.status === "active" ? `<button class="small-button" data-action="complete-task" data-id="${escapeHtml(task.id)}">Terminer</button>` : `<button class="small-button" data-action="restore-task" data-id="${escapeHtml(task.id)}">Rouvrir</button>`;
+    const action = elapsed ? `<button class="small-button primary" data-action="restart-task" data-id="${escapeHtml(task.id)}">Replanifier</button>` : task.status === "queued" ? `<button class="small-button primary" data-action="start-task" data-id="${escapeHtml(task.id)}">Démarrer</button>` : task.status === "active" ? `<button class="small-button" data-action="complete-task" data-id="${escapeHtml(task.id)}">Terminer</button>` : `<button class="small-button" data-action="restore-task" data-id="${escapeHtml(task.id)}">Rouvrir</button>`;
     const deadline = taskDeadline(task);
     return `<article class="planet-card ${elapsed ? "is-elapsed" : ""} ${done ? "is-done" : ""}" data-planet-card="${escapeHtml(task.id)}"><div class="planet-card-head"><span class="planet-swatch" style="--planet-color:${color}"></span><div class="planet-card-name"><h4>${escapeHtml(task.title)}</h4><span>${escapeHtml(task.topicName || "Planète")}</span></div><span class="planet-timer">${escapeHtml(timeLabel(task))}</span></div><div class="planet-card-meta"><span class="deadline-label">${deadline ? `Échéance · ${escapeHtml(formatDueDate(deadline))}` : "Échéance à définir"}</span></div>${note ? `<p class="planet-note">${escapeHtml(note)}</p>` : ""}${elapsed ? `<label class="field planet-reason-field">Note pour reprendre plus facilement<textarea data-task-field="reason" data-id="${escapeHtml(task.id)}" maxlength="300" placeholder="Qu’est-ce qui reste à faire ?">${escapeHtml(task.reason)}</textarea></label>` : ""}<div class="planet-actions">${action}<button class="small-button archive-button" data-action="archive-task" data-id="${escapeHtml(task.id)}">Archiver</button></div><details class="planet-editor"><summary>Modifier cette planète</summary><div class="form-grid planet-editor-fields"><label class="field wide">Nom<input data-task-field="title" data-id="${escapeHtml(task.id)}" maxlength="180" value="${escapeHtml(task.title)}"></label><label class="field">Repère facultatif<input data-task-field="topicName" data-id="${escapeHtml(task.id)}" maxlength="48" value="${escapeHtml(task.topicName || "")}" placeholder="Projet, personne, lieu…"></label><label class="field">Échéance — date et heure<input data-task-field="deadlineAt" data-id="${escapeHtml(task.id)}" type="datetime-local" value="${deadline ? toDateTimeLocal(deadline) : ""}"></label><label class="field planet-color-field">Couleur<input data-task-field="planetColor" data-id="${escapeHtml(task.id)}" type="color" value="${color}"></label><label class="field planet-size-field">Taille<input data-task-field="planetSize" data-id="${escapeHtml(task.id)}" type="range" min="0.55" max="1.65" step="0.05" value="${task.planetSize || legacy?.size || 1}"></label><label class="field wide">Contexte ou détail<textarea data-task-field="description" data-id="${escapeHtml(task.id)}" maxlength="700">${escapeHtml(task.description)}</textarea></label><label class="field wide">Note<textarea data-task-field="reason" data-id="${escapeHtml(task.id)}" maxlength="300">${escapeHtml(task.reason)}</textarea></label><details class="visual-options wide"><summary>Anneaux et matière</summary><div class="form-grid visual-option-fields"><label class="field">Nombre d’anneaux<input data-task-field="ringCount" data-id="${escapeHtml(task.id)}" type="number" min="0" max="5" value="${task.ringCount}"></label><label class="field inline-choice"><span>Anneaux lumineux</span><input data-task-field="ringsGlow" data-id="${escapeHtml(task.id)}" type="checkbox" ${task.ringsGlow ? "checked" : ""}></label><label class="field inline-choice"><span>Anneaux rocheux</span><input data-task-field="ringsRocky" data-id="${escapeHtml(task.id)}" type="checkbox" ${task.ringsRocky ? "checked" : ""}></label></div></details></div></details></article>`;
   }
@@ -465,7 +467,9 @@
   function drawStars(timestamp) {
     stars.forEach((star) => {
       const twinkle = 0.57 + 0.43 * Math.sin(timestamp * 0.00055 * star.slow + star.phase);
-      const x = star.x * width, y = star.y * height, radius = star.size * (0.8 + 0.2 * twinkle);
+      const drift = timestamp * 0.0000018 * star.slow + star.phase;
+      const x = star.x * width + Math.cos(drift) * 1.35, y = star.y * height + Math.sin(drift) * 1.35;
+      const radius = star.size * (0.8 + 0.2 * twinkle);
       ctx.globalAlpha = star.alpha * twinkle;
       ctx.fillStyle = "#f5f5ef"; ctx.beginPath(); ctx.arc(x, y, radius, 0, TAU); ctx.fill();
     });
@@ -478,10 +482,60 @@
     return { x: width * center.x, y: height * center.y, radius };
   }
 
-  function drawOrbit(cx, cy, radiusX, radiusY, phase, color, alpha) {
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(phase);
-    ctx.beginPath(); ctx.ellipse(0, 0, radiusX, radiusY, 0, 0, TAU);
-    ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = 0.75; ctx.setLineDash([1, 4]); ctx.lineDashOffset = -lastDraw * 0.003; ctx.stroke(); ctx.restore(); ctx.globalAlpha = 1;
+  function projectScenePoint(cx, cy, x, y, z, timestamp) {
+    const yaw = 0.14 * Math.sin(timestamp * 0.000035);
+    const pitch = 0.48 + 0.035 * Math.sin(timestamp * 0.000021);
+    const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw);
+    const rotatedX = x * cosYaw + z * sinYaw;
+    const rotatedZ = -x * sinYaw + z * cosYaw;
+    const cosPitch = Math.cos(pitch), sinPitch = Math.sin(pitch);
+    const rotatedY = y * cosPitch - rotatedZ * sinPitch;
+    const depth = y * sinPitch + rotatedZ * cosPitch;
+    const focal = Math.max(420, Math.min(width, height) * 1.55);
+    const perspective = clamp(focal / (focal + depth), 0.62, 1.58);
+    return { x: cx + rotatedX * perspective, y: cy + rotatedY * perspective, scale: perspective, depth };
+  }
+
+  function orbitPoint(core, angle, radius, inclination, nodeAngle, timestamp) {
+    const planeX = Math.cos(angle) * radius;
+    const planeY = Math.sin(angle) * radius;
+    const cosNode = Math.cos(nodeAngle), sinNode = Math.sin(nodeAngle);
+    const cosInclination = Math.cos(inclination), sinInclination = Math.sin(inclination);
+    const x = planeX * cosNode - planeY * cosInclination * sinNode;
+    const y = planeX * sinNode + planeY * cosInclination * cosNode;
+    const z = planeY * sinInclination;
+    return projectScenePoint(core.x, core.y, x, y, z, timestamp);
+  }
+
+  function drawProjectedOrbit(core, radius, inclination, nodeAngle, color, alpha, timestamp, dashed = true) {
+    const segments = 88;
+    ctx.save(); ctx.beginPath();
+    for (let segment = 0; segment <= segments; segment++) {
+      const point = orbitPoint(core, segment / segments * TAU, radius, inclination, nodeAngle, timestamp);
+      if (segment === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y);
+    }
+    ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = 0.8;
+    if (dashed) { ctx.setLineDash([1.5, 8]); ctx.lineDashOffset = -timestamp * 0.008; }
+    ctx.stroke(); ctx.restore();
+  }
+
+  function drawDistantOrbitals(core, timestamp) {
+    const span = Math.min(width, height);
+    const colors = ["#a8baff", "#90f4e6", "#f0a7e7"];
+    for (let index = 0; index < 3; index++) {
+      const radius = span * (0.43 + index * 0.13);
+      const inclination = [0.82, 1.12, 0.48][index];
+      const nodeAngle = index * 1.17 - 0.34;
+      drawProjectedOrbit(core, radius, inclination, nodeAngle, colors[index], 0.052 - index * 0.008, timestamp);
+      const angle = timestamp * (index % 2 ? -0.000038 : 0.000031) + index * 2.13;
+      const mote = orbitPoint(core, angle, radius, inclination, nodeAngle, timestamp);
+      const size = (1.05 + index * 0.18) * mote.scale;
+      const glow = ctx.createRadialGradient(mote.x, mote.y, 0, mote.x, mote.y, size * 6);
+      glow.addColorStop(0, `${colors[index]}55`); glow.addColorStop(1, `${colors[index]}00`);
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(mote.x, mote.y, size * 6, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 0.22 - index * 0.04; ctx.fillStyle = colors[index];
+      ctx.beginPath(); ctx.arc(mote.x, mote.y, size, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+    }
   }
 
   function drawCore(core, timestamp, urgency) {
@@ -517,9 +571,9 @@
     coreHit = { x: core.x, y: core.y, radius: radius * 1.18 };
   }
 
-  function drawPlanetRings(x, y, radius, color, count, glowing, rocky, rotation, fade) {
+  function drawPlanetRings(x, y, radius, color, count, glowing, rocky, rotation, fade, timestamp) {
     if (!count) return;
-    ctx.save(); ctx.translate(x, y); ctx.rotate(rotation);
+    ctx.save();
     for (let ring = 0; ring < count; ring++) {
       const rx = radius * (1.62 + ring * .27);
       const ry = radius * (.42 + ring * .035);
@@ -527,48 +581,63 @@
       ctx.globalAlpha = fade * (glowing ? .82 : .58);
       ctx.strokeStyle = lineColor; ctx.lineWidth = Math.max(.55, radius * .055);
       if (glowing) { ctx.shadowColor = `${color}aa`; ctx.shadowBlur = radius * .28; }
-      ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, TAU); ctx.stroke(); ctx.shadowBlur = 0;
+      const inclination = .34 + ring * .14;
+      const points = 56;
+      ctx.beginPath();
+      for (let step = 0; step <= points; step++) {
+        const angle = rotation + step / points * TAU;
+        const px = Math.cos(angle) * rx;
+        const py = Math.sin(angle) * ry * Math.cos(inclination);
+        const pz = Math.sin(angle) * ry * Math.sin(inclination);
+        const point = projectScenePoint(x, y, px, py, pz, timestamp);
+        if (!step) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y);
+      }
+      ctx.stroke(); ctx.shadowBlur = 0;
       if (rocky) {
         const stones = Math.max(3, 7 - ring);
         for (let stone = 0; stone < stones; stone++) {
           const angle = (stone / stones) * TAU + ring * 1.13;
-          const px = Math.cos(angle) * rx, py = Math.sin(angle) * ry;
+          const px = Math.cos(angle + rotation) * rx;
+          const py = Math.sin(angle + rotation) * ry * Math.cos(inclination);
+          const pz = Math.sin(angle + rotation) * ry * Math.sin(inclination);
+          const point = projectScenePoint(x, y, px, py, pz, timestamp);
           const size = Math.max(.7, radius * (.035 + ((stone + ring) % 3) * .012));
           ctx.fillStyle = (stone + ring) % 3 ? "#b8c7d6" : "#f4e8c9";
-          ctx.globalAlpha = fade * .78; ctx.beginPath(); ctx.arc(px, py, size, 0, TAU); ctx.fill();
+          ctx.globalAlpha = fade * .78; ctx.beginPath(); ctx.arc(point.x, point.y, size * point.scale, 0, TAU); ctx.fill();
         }
       }
     }
     ctx.restore(); ctx.globalAlpha = 1;
   }
 
-  function drawTaskPlanet(task, index, activeTasks, core, timestamp, wallTime) {
+  function drawTaskPlanet(task, index, core, timestamp, wallTime) {
     const subject = subjectById(task.subjectId);
     const color = task.planetColor || subject?.color || NEON_COLORS[index % NEON_COLORS.length];
     const phase = taskPhase(task, wallTime);
-    const progress = phase === "elapsed" ? 1 : taskProgress(task, wallTime);
+    const progress = phase === "running" ? taskProgress(task, wallTime) : phase === "elapsed" ? 1 : 0;
     const orbitIndex = index + 1;
     const outer = Math.min(Math.min(width, height) * .44, core.radius + 84 + (orbitIndex % 4) * 34);
     const orbit = core.radius + 22 + (outer - core.radius - 22) * (1 - Math.pow(progress, 1.38));
     const direction = index % 2 ? -1 : 1;
     const speed = .00013 * data.visual.speed * (motionPreference === "reduced" ? 0.45 : 1) * (1 + index * .055) * direction;
     const angle = (index * 2.399963) + (task.startedAt || task.createdAt) * .000002 + timestamp * speed;
-    const squash = .58 + (index % 3) * .08;
-    const x = core.x + Math.cos(angle) * orbit;
-    const y = core.y + Math.sin(angle) * orbit * squash + Math.sin(timestamp * .0004 + index) * 3;
+    const inclination = [0.38, 0.68, 0.94, 1.18, 0.52, 1.36][index % 6];
+    const nodeAngle = index * 1.73 + 0.26 * Math.sin(timestamp * .000018 + index);
+    const position = orbitPoint(core, angle, orbit, inclination, nodeAngle, timestamp);
+    const { x, y } = position;
     const urgency = phase === "running" && taskDeadline(task) ? progress : phase === "elapsed" ? 1 : 0;
     const heartbeatScale = motionPreference === "reduced" ? 0.5 : 1;
     const heartbeat = urgency > .72 ? 1 + .055 * heartbeatScale * Math.sin(timestamp * .0085) : 1 + .018 * heartbeatScale * Math.sin(timestamp * .0022 + index);
     const subjectSize = task.planetSize || subject?.size || 1;
-    const radius = clamp((10 + Math.min(5, subjectSize * 3)) * data.visual.planetScale * subjectSize, 7, 27) * heartbeat;
+    const radius = clamp((10 + Math.min(5, subjectSize * 3)) * data.visual.planetScale * subjectSize, 7, 27) * heartbeat * position.scale;
     const ageAfter = taskDeadline(task) ? wallTime - taskDeadline(task) : 0;
     const absorbing = phase === "elapsed" && ageAfter >= 0 && ageAfter < 1750;
     const fade = absorbing ? 1 - ageAfter / 1750 : phase === "elapsed" ? 0 : 1;
     if (fade <= 0) return;
     ctx.save(); ctx.globalAlpha = fade;
     if (data.visual.showOrbits) {
-      drawOrbit(core.x, core.y, outer, outer * squash, -.13 + index * .1, color, .32);
-      ctx.beginPath(); ctx.ellipse(core.x, core.y, orbit, orbit * squash, -.13 + index * .1, 0, TAU); ctx.strokeStyle = color; ctx.globalAlpha = .28 * fade; ctx.lineWidth = .8; ctx.setLineDash([1.5, 8]); ctx.lineDashOffset = -timestamp * .008; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = fade;
+      drawProjectedOrbit(core, outer, inclination, nodeAngle, color, .13 * fade, timestamp);
+      drawProjectedOrbit(core, orbit, inclination, nodeAngle, color, .26 * fade, timestamp);
     }
     if (absorbing) {
       const sink = ageAfter / 1750; const sx = x + (core.x - x) * sink; const sy = y + (core.y - y) * sink; const sr = radius * (1 - sink * .62);
@@ -576,12 +645,19 @@
       ctx.restore(); return;
     }
     const glow = ctx.createRadialGradient(x, y, 0, x, y, radius * 3.35); glow.addColorStop(0, `${color}66`); glow.addColorStop(.32, `${color}30`); glow.addColorStop(1, `${color}00`); ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(x, y, radius * 3.35, 0, TAU); ctx.fill();
-    drawPlanetRings(x, y, radius, color, Math.round(clamp(task.ringCount ?? 1, 0, 5)), task.ringsGlow !== false, Boolean(task.ringsRocky), angle * .16, fade);
+    drawPlanetRings(x, y, radius, color, Math.round(clamp(task.ringCount ?? 1, 0, 5)), task.ringsGlow !== false, Boolean(task.ringsRocky), angle * .16 + timestamp * .00008, fade, timestamp);
     ctx.shadowColor = `${color}dd`; ctx.shadowBlur = 11 * data.visual.planetScale;
-    const surface = ctx.createRadialGradient(x - radius * .38, y - radius * .44, .5, x + radius * .17, y + radius * .16, radius * 1.3);
+    const spin = timestamp * .00019 + index * 1.7;
+    const highlightX = Math.cos(spin) * radius * .12;
+    const highlightY = Math.sin(spin) * radius * .11;
+    const surface = ctx.createRadialGradient(x - radius * .38 + highlightX, y - radius * .44 + highlightY, .5, x + radius * .17, y + radius * .16, radius * 1.3);
     surface.addColorStop(0, "#ffffff"); surface.addColorStop(.11, color); surface.addColorStop(.53, color); surface.addColorStop(.84, "#263347"); surface.addColorStop(1, "#0a1020");
     ctx.fillStyle = surface; ctx.beginPath(); ctx.arc(x, y, radius, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
-    ctx.save(); ctx.beginPath(); ctx.arc(x, y, radius * .98, 0, TAU); ctx.clip(); ctx.globalAlpha = .18; ctx.strokeStyle = "#f4ffff"; ctx.lineWidth = Math.max(.4, radius * .035); ctx.beginPath(); ctx.ellipse(x - radius * .12, y, radius * .42, radius * .95, -.36, -.95, 1.15); ctx.stroke(); ctx.globalAlpha = .16; ctx.strokeStyle = `${color}cc`; ctx.beginPath(); ctx.ellipse(x, y + radius * .13, radius * .95, radius * .23, -.12, .12, 2.8); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.arc(x, y, radius * .98, 0, TAU); ctx.clip();
+    ctx.globalAlpha = .16; ctx.strokeStyle = "#f4ffff"; ctx.lineWidth = Math.max(.4, radius * .035);
+    ctx.beginPath(); ctx.ellipse(x + highlightX * 1.8, y + highlightY * 1.8, radius * .38, radius * .94, -.36 + Math.sin(spin) * .12, -.95, 1.15); ctx.stroke();
+    ctx.globalAlpha = .15; ctx.strokeStyle = `${color}dd`; ctx.beginPath(); ctx.ellipse(x, y + radius * .13, radius * .95, radius * .23, -.12 + Math.cos(spin) * .08, .12, 2.8); ctx.stroke();
+    ctx.globalAlpha = .1; ctx.strokeStyle = "#ffffff"; ctx.beginPath(); ctx.ellipse(x, y - radius * .18, radius * .9, radius * .13, Math.sin(spin) * .09, .2, 2.75); ctx.stroke(); ctx.restore();
     if (phase === "running" && data.visual.showOrbits) {
       ctx.strokeStyle = `${color}a8`; ctx.lineWidth = 1.1; ctx.beginPath(); ctx.arc(x, y, radius + 3, -Math.PI / 2, -Math.PI / 2 + TAU * Math.max(.025, progress)); ctx.stroke();
     }
@@ -597,18 +673,36 @@
     coreCurrent.y += (coreTarget.y - coreCurrent.y) * Math.min(1, dt * .012);
     ctx.clearRect(0, 0, width, height);
     drawStars(timestamp);
-    const tasks = (DESKTOP_WIDGET ? currentTasksSnapshot : data.tasks).filter((task) => task.status === "active" && task.startedAt && (taskPhase(task, wallTime) !== "elapsed" || wallTime - taskDeadline(task) < 1750));
-    const running = tasks.filter((task) => taskPhase(task, wallTime) === "running").sort((a, b) => (taskDeadline(a) || Infinity) - (taskDeadline(b) || Infinity));
-    const visible = running.slice(0, data.visual.planetCount);
-    const active = visible.concat(tasks.filter((task) => taskPhase(task, wallTime) === "elapsed" && wallTime - taskDeadline(task) < 1750));
+    const openTasks = (DESKTOP_WIDGET ? currentTasksSnapshot : data.tasks).filter((task) => !["done", "archived"].includes(task.status));
+    const running = openTasks.filter((task) => taskPhase(task, wallTime) === "running").sort((a, b) => (taskDeadline(a) || Infinity) - (taskDeadline(b) || Infinity));
+    const queued = openTasks.filter((task) => taskPhase(task, wallTime) === "queued").sort((a, b) => (taskDeadline(a) || Infinity) - (taskDeadline(b) || Infinity));
+    const visible = running.concat(queued).slice(0, data.visual.planetCount);
+    const absorbing = openTasks.filter((task) => taskPhase(task, wallTime) === "elapsed" && wallTime - taskDeadline(task) < 1750);
+    const active = visible.concat(absorbing);
     const core = coreGeometry();
     let urgency = 0;
     if (active.length) urgency = Math.max(...active.map((task) => taskProgress(task, wallTime)));
+    drawDistantOrbitals(core, timestamp);
     if (data.visual.showOrbits) {
-      [1.42, 1.92, 2.5].forEach((factor, index) => drawOrbit(core.x, core.y, core.radius * factor + 34, (core.radius * factor + 34) * .57, -.17 + index * .16, index % 2 ? "rgba(139,121,255,.62)" : "rgba(66,220,255,.56)", .19));
+      [1.42, 1.92, 2.5].forEach((factor, index) => drawProjectedOrbit(core, core.radius * factor + 34, .48 + index * .21, -.17 + index * .72, index % 2 ? "#8b79ff" : "#42dcff", .11, timestamp));
     }
-    active.forEach((task, index) => drawTaskPlanet(task, index, active, core, timestamp, wallTime));
+    const ordered = active.map((task, index) => ({ task, index, phase: taskPhase(task, wallTime), progress: taskPhase(task, wallTime) === "running" ? taskProgress(task, wallTime) : 0 }))
+      .sort((a, b) => Number(b.phase === "elapsed") - Number(a.phase === "elapsed") || (a.progress - b.progress));
+    const rear = ordered.filter(({ task, index, phase }) => {
+      const progress = phase === "running" ? taskProgress(task, wallTime) : phase === "elapsed" ? 1 : 0;
+      const outer = Math.min(Math.min(width, height) * .44, core.radius + 84 + ((index + 1) % 4) * 34);
+      const orbit = core.radius + 22 + (outer - core.radius - 22) * (1 - Math.pow(progress, 1.38));
+      const direction = index % 2 ? -1 : 1;
+      const speed = .00013 * data.visual.speed * (motionPreference === "reduced" ? 0.45 : 1) * (1 + index * .055) * direction;
+      const angle = index * 2.399963 + (task.startedAt || task.createdAt) * .000002 + timestamp * speed;
+      const inclination = [0.38, 0.68, 0.94, 1.18, 0.52, 1.36][index % 6];
+      const nodeAngle = index * 1.73 + 0.26 * Math.sin(timestamp * .000018 + index);
+      return orbitPoint(core, angle, orbit, inclination, nodeAngle, timestamp).depth > 0;
+    });
+    const front = ordered.filter((item) => !rear.includes(item));
+    rear.forEach(({ task, index }) => drawTaskPlanet(task, index, core, timestamp, wallTime));
     drawCore(core, timestamp, urgency);
+    front.forEach(({ task, index }) => drawTaskPlanet(task, index, core, timestamp, wallTime));
     if (DESKTOP_WIDGET && timestamp - lastPositionSent > 70) updateHitArea();
     requestAnimationFrame(drawFrame);
   }

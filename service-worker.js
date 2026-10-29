@@ -1,4 +1,4 @@
-const CACHE_NAME = "cockpit-takeover-shell-v7";
+const CACHE_NAME = "cockpit-takeover-shell-v8";
 const SHELL = ["./", "./index.html", "./cockpit.js", "./cockpit.css", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", function (event) {
