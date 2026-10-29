@@ -34,6 +34,7 @@ struct CoreDragArea {
 struct CoreDragEvent {
   HWND child = nullptr;
   POINT point{};
+  POINT origin{};
   int phase = 0;  // 0: start, 1: move, 2: end
 };
 
@@ -42,6 +43,7 @@ std::vector<CoreDragArea> g_dragAreas;
 std::deque<CoreDragEvent> g_dragEvents;
 HHOOK g_mouseHook = nullptr;
 HWND g_draggingChild = nullptr;
+POINT g_dragOrigin{};
 
 bool IsWindowClass(HWND hwnd, const wchar_t* expected);
 
@@ -95,7 +97,8 @@ LRESULT CALLBACK CoreDragMouseHook(int code, WPARAM message, LPARAM data) {
       if (dx * dx + dy * dy > area.radius * area.radius) continue;
       if (HasDesktopIconAtPoint(area.iconView, mouse->pt)) break;
       g_draggingChild = area.child;
-      g_dragEvents.push_back({ area.child, mouse->pt, 0 });
+      g_dragOrigin = mouse->pt;
+      g_dragEvents.push_back({ area.child, mouse->pt, g_dragOrigin, 0 });
       return 1;
     }
   } else if (message == WM_MOUSEMOVE) {
@@ -104,14 +107,14 @@ LRESULT CALLBACK CoreDragMouseHook(int code, WPARAM message, LPARAM data) {
       if (!g_dragEvents.empty() && g_dragEvents.back().child == g_draggingChild && g_dragEvents.back().phase == 1) {
         g_dragEvents.back().point = mouse->pt;
       } else {
-        g_dragEvents.push_back({ g_draggingChild, mouse->pt, 1 });
+        g_dragEvents.push_back({ g_draggingChild, mouse->pt, g_dragOrigin, 1 });
       }
       return 1;
     }
   } else if (message == WM_RBUTTONUP) {
     std::lock_guard<std::mutex> lock(g_dragMutex);
     if (g_draggingChild) {
-      g_dragEvents.push_back({ g_draggingChild, mouse->pt, 2 });
+      g_dragEvents.push_back({ g_draggingChild, mouse->pt, g_dragOrigin, 2 });
       g_draggingChild = nullptr;
       return 1;
     }
@@ -135,6 +138,7 @@ void RemoveCoreDragHook() {
   g_dragAreas.clear();
   g_dragEvents.clear();
   g_draggingChild = nullptr;
+  g_dragOrigin = {};
 }
 
 bool IsWindowClass(HWND hwnd, const wchar_t* expected) {
@@ -309,7 +313,7 @@ Napi::Value RemoveCoreDragArea(const Napi::CallbackInfo& info) {
   const HWND child = ReadHandle(info[0]);
   std::lock_guard<std::mutex> lock(g_dragMutex);
   g_dragAreas.erase(std::remove_if(g_dragAreas.begin(), g_dragAreas.end(), [child](const CoreDragArea& area) { return area.child == child; }), g_dragAreas.end());
-  if (g_draggingChild == child) g_draggingChild = nullptr;
+  if (g_draggingChild == child) { g_draggingChild = nullptr; g_dragOrigin = {}; }
   if (g_dragAreas.empty() && g_mouseHook) {
     UnhookWindowsHookEx(g_mouseHook);
     g_mouseHook = nullptr;
@@ -332,6 +336,8 @@ Napi::Value PollCoreDrag(const Napi::CallbackInfo& info) {
     item.Set("handle", Napi::BigInt::New(env, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(event.child))));
     item.Set("x", Napi::Number::New(env, event.point.x));
     item.Set("y", Napi::Number::New(env, event.point.y));
+    item.Set("originX", Napi::Number::New(env, event.origin.x));
+    item.Set("originY", Napi::Number::New(env, event.origin.y));
     item.Set("phase", Napi::String::New(env, event.phase == 0 ? "start" : event.phase == 2 ? "end" : "move"));
     result.Set(index++, item);
   }

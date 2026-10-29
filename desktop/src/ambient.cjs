@@ -261,12 +261,12 @@ function pollCoreDrag() {
     const display = screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
     if (!display) continue;
     const scale = display.scaleFactor || 1;
-    const x = (drag.x / scale - display.bounds.x) / display.bounds.width;
-    const y = (drag.y / scale - display.bounds.y) / display.bounds.height;
+    const deltaX = (drag.x - drag.originX) / (scale * display.bounds.width);
+    const deltaY = (drag.y - drag.originY) / (scale * display.bounds.height);
     window.webContents.send("qg:scene-core-drag", {
       phase: drag.phase,
-      x: Math.max(0.07, Math.min(0.93, x)),
-      y: Math.max(0.09, Math.min(0.91, y))
+      deltaX,
+      deltaY
     });
   }
 }

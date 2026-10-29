@@ -1,6 +1,6 @@
-# Cockpit Takeover Widget 0.11.2
+# Cockpit Takeover Widget 0.11.3
 
-- Le widget Windows reste transparent après son démarrage et à la fermeture.
-- Le clic droit permet de déplacer uniquement la planète centrale; les clics sur les icônes Windows restent disponibles.
+- Le déplacement au clic droit suit maintenant le déplacement réel de la souris, sans saut vers le curseur.
+- La transparence et le passage des clics aux icônes restent inchangés.
 - Le site et son interface ne changent pas.
 
