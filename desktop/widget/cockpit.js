@@ -1464,7 +1464,26 @@
   window.addEventListener("resize", () => { resizeCanvas(); applyPanelPosition(); }, { passive: true });
 
   if (window.qgScene) {
-    if (DESKTOP_WIDGET) window.qgScene.onMascotClick(() => handleMascotPlanetClick());
+    if (DESKTOP_WIDGET) {
+      let nativeDragStart = null;
+      window.qgScene.onCoreDrag((drag) => {
+        if (!drag || !Number.isFinite(drag.deltaX) || !Number.isFinite(drag.deltaY)) return;
+        if (drag.phase === "start") {
+          const core = coreGeometry();
+          nativeDragStart = { x: core.x / Math.max(1, width), y: core.y / Math.max(1, height) };
+        }
+        if (!nativeDragStart) return;
+        data.visual.center = {
+          x: clamp(nativeDragStart.x + drag.deltaX, -4, 4),
+          y: clamp(nativeDragStart.y + drag.deltaY, -4, 4)
+        };
+        data.visual.zoomPan = { x: 0, y: 0 };
+        coreTarget = { ...data.visual.center };
+        coreCurrent = { ...coreTarget };
+        if (drag.phase === "end") nativeDragStart = null;
+      });
+      window.qgScene.onMascotClick(() => handleMascotPlanetClick());
+    }
     window.qgScene.onSceneState((snapshot) => {
       if (!snapshot) return;
       if (Array.isArray(snapshot.subjects) && snapshot.subjects.length) data.subjects = snapshot.subjects.map(cleanSubject);

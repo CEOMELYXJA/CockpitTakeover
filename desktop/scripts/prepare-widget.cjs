@@ -32,7 +32,7 @@ widgetScript = replaceOnce(widgetScript,
   "la zone de déplacement du noyau");
 widgetScript = replaceOnce(widgetScript,
   '  if (window.qgScene) {\n    window.qgScene.onSceneState((snapshot) => {',
-  '  if (window.qgScene) {\n    if (DESKTOP_WIDGET) window.qgScene.onMascotClick(() => handleMascotPlanetClick());\n    window.qgScene.onSceneState((snapshot) => {',
+  '  if (window.qgScene) {\n    if (DESKTOP_WIDGET) {\n      let nativeDragStart = null;\n      window.qgScene.onCoreDrag((drag) => {\n        if (!drag || !Number.isFinite(drag.deltaX) || !Number.isFinite(drag.deltaY)) return;\n        if (drag.phase === "start") {\n          const core = coreGeometry();\n          nativeDragStart = { x: core.x / Math.max(1, width), y: core.y / Math.max(1, height) };\n        }\n        if (!nativeDragStart) return;\n        data.visual.center = {\n          x: clamp(nativeDragStart.x + drag.deltaX, -4, 4),\n          y: clamp(nativeDragStart.y + drag.deltaY, -4, 4)\n        };\n        data.visual.zoomPan = { x: 0, y: 0 };\n        coreTarget = { ...data.visual.center };\n        coreCurrent = { ...coreTarget };\n        if (drag.phase === "end") nativeDragStart = null;\n      });\n      window.qgScene.onMascotClick(() => handleMascotPlanetClick());\n    }\n    window.qgScene.onSceneState((snapshot) => {',
   "le clic sur la planète de divertissement");
 widgetScript = replaceOnce(widgetScript,
   '      if (settings.visual) data.visual = cleanVisual({ ...data.visual, ...settings.visual });',

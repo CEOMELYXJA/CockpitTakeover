@@ -345,15 +345,25 @@ function pollCoreDrag() {
       window.webContents.send("qg:scene-mascot-click");
       continue;
     }
-    const display = screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
-    if (!display) continue;
     if (![drag.x, drag.y, drag.originX, drag.originY, drag.coreOriginX, drag.coreOriginY].every(Number.isFinite)) continue;
+    const deltaX = drag.x - drag.originX;
+    const deltaY = drag.y - drag.originY;
     const nextPosition = normalizedDesktopPoint(
-      drag.coreOriginX + drag.x - drag.originX,
-      drag.coreOriginY + drag.y - drag.originY
+      drag.coreOriginX + deltaX,
+      drag.coreOriginY + deltaY
     );
     snapshot.settings = { ...snapshot.settings, widgetDesktopPosition: nextPosition };
-    broadcastState();
+    for (const scene of scenes) {
+      if (scene.isDestroyed() || scene.webContents.isLoading()) continue;
+      const display = screen.getAllDisplays().find((item) => item.id === scene.__qgDisplayId);
+      if (!display) continue;
+      const bounds = physicalDisplayBounds(display);
+      scene.webContents.send("qg:scene-core-drag", {
+        phase: drag.phase,
+        deltaX: deltaX / bounds.width,
+        deltaY: deltaY / bounds.height
+      });
+    }
     if (drag.phase === "end") sendToParent({ type: "widget-position", payload: nextPosition });
   }
 }
