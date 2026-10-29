@@ -4,6 +4,26 @@
   const STORAGE_KEY = "cockpit-takeover-v1";
   const SYNC_FORMAT = "cockpittakeover-widget-sync";
   const TAU = Math.PI * 2;
+  const MAX_ZOOM = 6;
+  const DETAIL_ZOOM = 4.8;
+  const MASCOT_ID = "__cockpit_mascot__";
+  const MASCOT_JOKES = [
+    "Pourquoi les astronautes n’utilisent-ils pas d’ordinateur ? Ils ont déjà une bonne souris de l’espace.",
+    "Une planète entre dans un bar. Le barman dit : « On vous reconnaît, vous avez toujours votre anneau. »",
+    "Pourquoi la lune est-elle si calme ? Parce qu’elle garde toujours la tête dans les cratères.",
+    "Mon orbite préférée ? Celle où je finis par retomber sur mes pieds.",
+    "Le petit astéroïde dit : « Je passe juste dire bonjour, je ne fais que graviter. »",
+    "Pourquoi Saturne est-elle si bien organisée ? Tout est déjà classé en anneaux.",
+    "La planète a pris une journée de repos. Elle était en pleine révolution.",
+    "Quel est le sport préféré des météorites ? Le lancer de loin.",
+    "J’ai demandé mon chemin à une étoile. Elle m’a répondu : « Suis ton orbite. »",
+    "Pourquoi les planètes ne se perdent-elles jamais ? Elles gardent toujours leur centre de gravité."
+  ];
+  const KLAXON_NOTES = [
+    [440, 660, 440], [520, 390, 520], [620, 780, 620], [350, 520, 700], [700, 510, 350],
+    [480, 720, 900], [900, 600, 400], [392, 587, 784], [784, 587, 392], [530, 530, 740],
+    [310, 465, 620], [660, 495, 660], [410, 615, 820], [820, 615, 410], [560, 840, 560]
+  ];
   const DESKTOP_WIDGET = new URLSearchParams(location.search).get("desktopWidget") === "1";
   const byId = (id) => document.getElementById(id);
   const normalize = (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -23,7 +43,7 @@
     { id: "admin", name: "Administration", description: "", color: "#c6ff55", size: 1, durationMinutes: 20 },
     { id: "personal", name: "Personnel", description: "", color: "#ad7bff", size: 1, durationMinutes: 25 }
   ];
-  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, showOrbits: true, center: { x: 0.5, y: 0.53 }, viewYaw: 0, viewPitch: 0, zoom: 1, coreColor: "#42dcff", coreCraters: "few" };
+  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, stars: 30, showOrbits: true, center: { x: 0.5, y: 0.53 }, zoomPan: { x: 0, y: 0 }, viewYaw: 0, viewPitch: 0, zoom: 1, focusTaskId: null, coreColor: "#42dcff", coreCraters: "few" };
   const DEFAULT_STATE = { version: 1, view: "tasks", taskFilter: "open", panelCollapsed: false, panelPosition: null, subjects: DEFAULT_SUBJECTS.map((item) => ({ ...item })), tasks: [], visual: structuredClone(DEFAULT_VISUAL), lastSync: 0 };
 
   function cleanSubject(value) {
@@ -84,9 +104,11 @@
       stars: Math.round(clamp(source.stars ?? DEFAULT_VISUAL.stars, 12, 64)),
       showOrbits: source.showOrbits !== false,
       center: { x: clamp(center.x ?? 0.5, 0.08, 0.92), y: clamp(center.y ?? 0.53, 0.1, 0.9) },
+      zoomPan: { x: clamp(source.zoomPan?.x ?? 0, -2.5, 2.5), y: clamp(source.zoomPan?.y ?? 0, -2.5, 2.5) },
       viewYaw: ((Number(source.viewYaw) || 0) % TAU + TAU) % TAU,
       viewPitch: clamp(source.viewPitch ?? 0, -1.15, 1.15),
-      zoom: clamp(source.zoom ?? 1, 0.65, 2.25),
+      zoom: clamp(source.zoom ?? 1, 0.65, MAX_ZOOM),
+      focusTaskId: /^[a-zA-Z0-9_-]{1,80}$/.test(String(source.focusTaskId || "")) ? String(source.focusTaskId) : null,
       coreColor: /^#[0-9a-fA-F]{6}$/.test(String(source.coreColor || "")) ? String(source.coreColor).toLowerCase() : DEFAULT_VISUAL.coreColor,
       coreCraters: ["none", "few", "many", "everest"].includes(source.coreCraters) ? source.coreCraters : DEFAULT_VISUAL.coreCraters
     };
@@ -121,6 +143,12 @@
   let coreCurrent = { ...data.visual.center };
   let coreTarget = { ...data.visual.center };
   let coreHit = { x: 0, y: 0, radius: 0 };
+  let planetHits = [], nextPlanetHits = [], detailHits = [], nextDetailHits = [];
+  let viewSaveTimer = 0;
+  let pinballOpen = false;
+  let pinballMount = null;
+  let playfulToastTimer = 0;
+  let audioContext = null;
   let width = 1, height = 1, ratio = 1, lastDraw = 0, lastPositionSent = 0;
   let panelDrag = null;
   let currentTasksSnapshot = [];
@@ -348,7 +376,7 @@
       case "restore-task": { const task = data.tasks.find((item) => item.id === id); if (task) { task.status = "queued"; task.startedAt = null; task.completedAt = null; save(); render(); } break; }
       case "archive-task": { const task = data.tasks.find((item) => item.id === id); if (task) { task.status = "archived"; save(); render(); } break; }
       case "filter": data.taskFilter = button.dataset.filter; save(); render(); break;
-      case "center-reset": data.visual.center = { x: 0.5, y: 0.53 }; coreTarget = { ...data.visual.center }; save(); if (DESKTOP_WIDGET) window.qgScene?.saveWidgetPosition?.(data.visual.center); else showToast("La carte est recentrée."); break;
+      case "center-reset": data.visual.center = { x: 0.5, y: 0.53 }; data.visual.zoomPan = { x: 0, y: 0 }; data.visual.zoom = 1; data.visual.focusTaskId = null; coreTarget = { ...data.visual.center }; save(); if (DESKTOP_WIDGET) { window.qgScene?.saveWidgetPosition?.(data.visual.center); saveViewGesture(); } else showToast("La carte est recentrée."); break;
       case "sync-widget": syncWidget(); break;
       case "import-file": byId("taskImport").click(); break;
       case "close-focus": byId("focusDialog")?.close(); break;
@@ -493,7 +521,7 @@
   function createStars() {
     const baseCount = Math.round(clamp(data.visual.stars, 12, 64));
     const total = baseCount * 50;
-    starAnchor = { x: width * coreCurrent.x, y: height * coreCurrent.y };
+    starAnchor = { x: width * (coreCurrent.x + data.visual.zoomPan.x), y: height * (coreCurrent.y + data.visual.zoomPan.y) };
     starLayer = document.createElement("canvas");
     const starRatio = Math.min(ratio, 1);
     starLayer.width = Math.max(1, Math.round(width * starRatio));
@@ -531,7 +559,7 @@
   }
 
   function drawStars(timestamp) {
-    const coreX = width * coreCurrent.x, coreY = height * coreCurrent.y;
+    const core = coreGeometry(), coreX = core.x, coreY = core.y;
     if (starLayer) {
       ctx.save(); ctx.translate(coreX, coreY); ctx.scale(data.visual.zoom, data.visual.zoom);
       ctx.drawImage(starLayer, -starAnchor.x, -starAnchor.y, width, height); ctx.restore();
@@ -550,7 +578,7 @@
   function coreGeometry() {
     const center = coreCurrent;
     const radius = clamp(Math.min(width, height) * 0.046, 30, 62) * data.visual.planetScale * data.visual.zoom;
-    return { x: width * center.x, y: height * center.y, radius };
+    return { x: width * (center.x + data.visual.zoomPan.x), y: height * (center.y + data.visual.zoomPan.y), radius };
   }
 
   function projectScenePoint(cx, cy, x, y, z, timestamp) {
@@ -609,6 +637,57 @@
     }
   }
 
+  function coreEdgeRadius(angle, radius, timestamp) {
+    const phase = timestamp * 0.000018;
+    const relief = 1 + Math.sin(angle * 3 + phase) * 0.008 + Math.sin(angle * 5 - phase * 1.4 + 1.2) * 0.005 + Math.sin(angle * 9 + phase * 0.7) * 0.0025;
+    return radius * relief;
+  }
+
+  function traceCoreSilhouette(core, radius, timestamp) {
+    const segments = 144;
+    ctx.beginPath();
+    for (let index = 0; index <= segments; index++) {
+      const angle = index / segments * TAU;
+      const edge = coreEdgeRadius(angle, radius, timestamp);
+      const x = core.x + Math.cos(angle) * edge;
+      const y = core.y + Math.sin(angle) * edge;
+      if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  function drawCoreTerrain(core, radius, timestamp, color) {
+    const phase = timestamp * 0.000018;
+    const landforms = [
+      { x: -.38, y: -.31, rx: .38, ry: .2, angle: -.48, light: true },
+      { x: .31, y: -.14, rx: .3, ry: .17, angle: .42, light: false },
+      { x: -.1, y: .22, rx: .44, ry: .19, angle: -.18, light: true },
+      { x: .37, y: .39, rx: .28, ry: .13, angle: -.36, light: false },
+      { x: -.48, y: .45, rx: .22, ry: .12, angle: .24, light: false }
+    ];
+    ctx.save();
+    traceCoreSilhouette(core, radius * .994, timestamp); ctx.clip();
+    landforms.forEach((form, index) => {
+      const x = core.x + (form.x + Math.sin(phase + index) * .018) * radius;
+      const y = core.y + (form.y + Math.cos(phase * .8 + index * 1.4) * .014) * radius;
+      const rx = form.rx * radius, ry = form.ry * radius;
+      const gradient = ctx.createRadialGradient(x - rx * .22, y - ry * .3, 0, x, y, rx * 1.06);
+      if (form.light) {
+        gradient.addColorStop(0, "rgba(255,255,255,.16)"); gradient.addColorStop(.48, colorWithAlpha(color, .12)); gradient.addColorStop(1, colorWithAlpha(color, 0));
+      } else {
+        gradient.addColorStop(0, "rgba(2,7,20,.28)"); gradient.addColorStop(.52, colorWithAlpha(color, .075)); gradient.addColorStop(1, colorWithAlpha(color, 0));
+      }
+      ctx.save(); ctx.translate(x, y); ctx.rotate(form.angle + Math.sin(phase + index) * .015);
+      ctx.fillStyle = gradient; ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, TAU); ctx.fill();
+      ctx.globalAlpha = form.light ? .14 : .1;
+      ctx.strokeStyle = form.light ? "rgba(246,255,255,.7)" : colorWithAlpha(color, .7);
+      ctx.lineWidth = Math.max(.55, radius * .009);
+      ctx.beginPath(); ctx.ellipse(-rx * .04, -ry * .12, rx * .78, ry * .72, 0, Math.PI * 1.08, Math.PI * 1.9); ctx.stroke();
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+
   function drawCore(core, timestamp, urgency) {
     const reduced = motionPreference === "reduced";
     const pulseRate = (urgency > 0.72 ? 1.1 : 0.42) * (reduced ? 0.45 : 1);
@@ -631,16 +710,17 @@
     const surface = ctx.createRadialGradient(core.x - radius * .34, core.y - radius * .42, radius * .04, core.x + radius * .24, core.y + radius * .24, radius * 1.18);
     surface.addColorStop(0, "#f2ffff"); surface.addColorStop(.09, baselineCore ? "#b8fbff" : tintColor(coreColor, .62)); surface.addColorStop(.26, coreColor); surface.addColorStop(.58, baselineCore ? "#2679a8" : tintColor(coreColor, -.32)); surface.addColorStop(.84, baselineCore ? "#18304f" : tintColor(coreColor, -.65)); surface.addColorStop(1, "#09101f");
     ctx.save(); ctx.shadowColor = colorWithAlpha(coreColor, .48); ctx.shadowBlur = radius * .48;
-    ctx.fillStyle = surface; ctx.beginPath(); ctx.arc(core.x, core.y, radius, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
-    ctx.save(); ctx.beginPath(); ctx.arc(core.x, core.y, radius * .99, 0, TAU); ctx.clip();
+    ctx.fillStyle = surface; traceCoreSilhouette(core, radius, timestamp); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.save(); traceCoreSilhouette(core, radius * .99, timestamp); ctx.clip();
     const plasma = ctx.createLinearGradient(core.x - radius, core.y + radius * .25, core.x + radius, core.y - radius * .2);
     plasma.addColorStop(0, "rgba(255,79,200,0)"); plasma.addColorStop(.48, "rgba(255,255,255,.16)"); plasma.addColorStop(1, "rgba(139,121,255,.2)");
     ctx.fillStyle = plasma; ctx.fillRect(core.x - radius, core.y - radius, radius * 2, radius * 2);
     ctx.globalAlpha = .2; ctx.strokeStyle = "#e7ffff"; ctx.lineWidth = Math.max(.7, radius * .025);
     [-.42, -.17, .12, .39].forEach((offset, index) => { ctx.beginPath(); ctx.ellipse(core.x, core.y + radius * offset, radius * .92, radius * (.12 + index * .012), -.08, .08, Math.PI * .92); ctx.stroke(); });
+    drawCoreTerrain(core, radius, timestamp, coreColor);
     drawCoreCraters(core, radius, data.visual.coreCraters, coreColor);
     ctx.restore();
-    ctx.strokeStyle = "rgba(200,250,255,.72)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(core.x, core.y, radius, -.92, 1.78); ctx.stroke();
+    ctx.strokeStyle = "rgba(200,250,255,.72)"; ctx.lineWidth = 1; traceCoreSilhouette(core, radius, timestamp); ctx.stroke();
     ctx.restore();
     coreHit = { x: core.x, y: core.y, radius: radius * 1.18 };
   }
@@ -687,10 +767,15 @@
       ctx.globalAlpha = .72; ctx.strokeStyle = colorWithAlpha(color, .8); ctx.lineWidth = Math.max(1, radius * .022);
       ctx.beginPath(); ctx.ellipse(x, y - basin * .035, basin, basin * .62, -.24, Math.PI * 1.04, Math.PI * 1.92); ctx.stroke();
       ctx.globalAlpha = .8;
-      const peak = ctx.createLinearGradient(x, y - basin * .75, x, y + basin * .48);
+      const peak = ctx.createLinearGradient(x, y - basin * .48, x, y + basin * .48);
       peak.addColorStop(0, "#f5ffff"); peak.addColorStop(.32, tintColor(color, .58)); peak.addColorStop(1, tintColor(color, -.45));
-      ctx.fillStyle = peak; ctx.strokeStyle = "rgba(245,252,255,.72)"; ctx.lineWidth = Math.max(.7, radius * .012);
-      ctx.beginPath(); ctx.moveTo(x - basin * .54, y + basin * .43); ctx.lineTo(x - basin * .3, y - basin * .16); ctx.lineTo(x - basin * .08, y + basin * .02); ctx.lineTo(x + basin * .14, y - basin * .72); ctx.lineTo(x + basin * .26, y - basin * .24); ctx.lineTo(x + basin * .5, y + basin * .43); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = peak; ctx.strokeStyle = "rgba(245,252,255,.58)"; ctx.lineWidth = Math.max(.7, radius * .012);
+      ctx.beginPath();
+      ctx.moveTo(x - basin * .54, y + basin * .4);
+      ctx.bezierCurveTo(x - basin * .44, y + basin * .08, x - basin * .42, y - basin * .16, x - basin * .23, y - basin * .22);
+      ctx.bezierCurveTo(x - basin * .06, y - basin * .31, x + basin * .01, y - basin * .55, x + basin * .17, y - basin * .49);
+      ctx.bezierCurveTo(x + basin * .37, y - basin * .41, x + basin * .35, y - basin * .12, x + basin * .52, y + basin * .4);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
     }
     ctx.restore(); ctx.globalAlpha = 1;
   }
@@ -742,7 +827,13 @@
     const absorbing = phase === "elapsed" && ageAfter >= 0 && ageAfter < 1750;
     const fade = absorbing ? 1 - ageAfter / 1750 : phase === "elapsed" ? 0 : 1;
     if (fade <= 0) return;
-    ctx.save(); ctx.globalAlpha = fade;
+    nextPlanetHits.push({ kind: "task", id: task.id, x, y, radius: radius * 1.2, depth: position.depth, task });
+    const focus = data.visual.focusTaskId ? planetHits.find((hit) => hit.id === data.visual.focusTaskId) : null;
+    const isZoomTarget = task.id === data.visual.focusTaskId;
+    const focusDistance = focus ? Math.hypot(x - focus.x, y - focus.y) : 0;
+    const blur = focus && !isZoomTarget && data.visual.zoom >= 2.4 ? clamp(.65 + (data.visual.zoom - 2.4) * .58 + focusDistance / 620, .65, 3.6) : 0;
+    ctx.save(); ctx.globalAlpha = fade * (blur ? clamp(.62 - blur * .085, .25, .55) : 1);
+    if (blur) ctx.filter = `blur(${blur.toFixed(1)}px)`;
     if (data.visual.showOrbits) {
       drawProjectedOrbit(core, outer, inclination, nodeAngle, color, .13 * fade, timestamp);
       drawProjectedOrbit(core, orbit, inclination, nodeAngle, color, .26 * fade, timestamp);
@@ -772,11 +863,213 @@
     ctx.restore();
   }
 
+  function orbitalSeed(value) {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index++) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619);
+    return hash >>> 0;
+  }
+
+  function wrapOrbitalText(value, maxWidth, font, maximumLines) {
+    const paragraphs = String(value || "—").trim().split(/\r?\n/);
+    const lines = [];
+    ctx.font = font;
+    for (const paragraph of paragraphs) {
+      let line = "";
+      for (const word of paragraph.trim().split(/\s+/).filter(Boolean)) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (ctx.measureText(candidate).width <= maxWidth || !line) line = candidate;
+        else { lines.push(line); line = word; }
+        if (lines.length >= maximumLines) break;
+      }
+      if (line && lines.length < maximumLines) lines.push(line);
+      if (lines.length >= maximumLines) break;
+    }
+    const unabridged = paragraphs.join(" ").replace(/\s+/g, " ").trim();
+    if (lines.length && lines.join(" ").replace(/\s+/g, " ").trim() !== unabridged) {
+      const last = lines.length - 1;
+      let clipped = lines[last].replace(/[.…]+$/, "");
+      while (clipped && ctx.measureText(`${clipped}…`).width > maxWidth) clipped = clipped.slice(0, -1);
+      lines[last] = `${clipped}…`;
+    }
+    return lines;
+  }
+
+  function detailDate(deadline) {
+    const date = new Date(deadline);
+    if (!Number.isFinite(date.getTime())) return "DATE INCONNUE";
+    const parts = new Intl.DateTimeFormat("fr-CA", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(date);
+    const part = (type) => parts.find((item) => item.type === type)?.value || "00";
+    return `${part("day")}/${part("month")}/${part("year")}\n${part("hour")}H${part("minute")}`;
+  }
+
+  function taskDetails(task, wallTime) {
+    const values = [];
+    if (task.title) values.push({ key: "action", label: "ACTION", value: task.title });
+    if (task.topicName) values.push({ key: "repere", label: "REPÈRE", value: task.topicName });
+    if (task.description) values.push({ key: "contexte", label: "CONTEXTE", value: task.description });
+    if (taskDeadline(task)) values.push({ key: "date", label: "DATE", value: detailDate(taskDeadline(task)) });
+    if (task.reason) values.push({ key: "note", label: "NOTE", value: task.reason });
+    values.push({ key: "etat", label: "ÉTAT", value: taskPhase(task, wallTime) === "running" ? "EN COURS" : taskPhase(task, wallTime) === "elapsed" ? "ÉCHÉANCE PASSÉE" : "EN ATTENTE" });
+    return values;
+  }
+
+  function drawOrbitalDetail(hit, item, orbitAngle, satelliteRadius, timestamp) {
+    const x = hit.x, y = hit.y;
+    const color = hit.task.planetColor || "#42dcff";
+    const glow = ctx.createRadialGradient(x, y, satelliteRadius * .2, x, y, satelliteRadius * 2.4);
+    glow.addColorStop(0, colorWithAlpha(color, .17)); glow.addColorStop(1, colorWithAlpha(color, 0));
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(x, y, satelliteRadius * 2.4, 0, TAU); ctx.fill();
+    const shell = ctx.createRadialGradient(x - satelliteRadius * .34, y - satelliteRadius * .42, satelliteRadius * .04, x + satelliteRadius * .2, y + satelliteRadius * .24, satelliteRadius * 1.22);
+    shell.addColorStop(0, tintColor(color, .56)); shell.addColorStop(.34, color); shell.addColorStop(.78, tintColor(color, -.48)); shell.addColorStop(1, "#060b18");
+    ctx.save(); ctx.shadowColor = colorWithAlpha(color, .25); ctx.shadowBlur = Math.min(8, satelliteRadius * .2);
+    ctx.fillStyle = shell; ctx.beginPath(); ctx.arc(x, y, satelliteRadius, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(x, y, satelliteRadius * .96, 0, TAU); ctx.clip();
+    ctx.globalAlpha = .28; ctx.strokeStyle = "rgba(247,252,255,.78)"; ctx.lineWidth = Math.max(.5, satelliteRadius * .018);
+    ctx.beginPath(); ctx.ellipse(x - satelliteRadius * .06, y - satelliteRadius * .08, satelliteRadius * .7, satelliteRadius * .2, -.2 + Math.sin(orbitAngle) * .05, .1, Math.PI * .92); ctx.stroke();
+    if (data.visual.zoom >= DETAIL_ZOOM) {
+      const fontSize = clamp(satelliteRadius * .25, 5.5, 10);
+      const headerFont = `700 ${Math.max(5, fontSize * .82)}px "IBM Plex Mono",monospace`;
+      const valueFont = `600 ${fontSize}px "IBM Plex Mono",monospace`;
+      const maxWidth = satelliteRadius * 1.56;
+      const maxLines = Math.max(2, Math.floor(satelliteRadius * 1.34 / (fontSize * 1.13)) - 1);
+      const lines = wrapOrbitalText(item.value, maxWidth, valueFont, maxLines);
+      const lineHeight = fontSize * 1.08;
+      const blockHeight = fontSize * .96 + lines.length * lineHeight;
+      let textY = y - blockHeight / 2 + fontSize * .72;
+      ctx.globalAlpha = .96; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#f7fbff";
+      ctx.font = headerFont; ctx.fillText(item.label, x, textY, maxWidth); textY += lineHeight;
+      ctx.font = valueFont;
+      for (const line of lines) { ctx.fillText(line, x, textY, maxWidth); textY += lineHeight; }
+    }
+    ctx.restore();
+  }
+
+  function drawTaskDetailSatellites(task, hit, timestamp, wallTime) {
+    if (!hit || data.visual.zoom < 2.4) return;
+    const details = taskDetails(task, wallTime);
+    if (!details.length) return;
+    const parent = { x: hit.x, y: hit.y };
+    const radius = hit.radius / 1.2;
+    const satelliteRadius = Math.min(radius * .48, Math.max(radius * .31, data.visual.zoom * 5.7, 10));
+    const layerRadii = [radius + satelliteRadius * 1.9, radius + satelliteRadius * 2.82];
+    const layerCounts = details.reduce((counts, _item, index) => { counts[index % 2]++; return counts; }, [0, 0]);
+    const layerIndices = [0, 0];
+    for (let layer = 0; layer < 2; layer++) {
+      if (!layerCounts[layer]) continue;
+      const seed = orbitalSeed(`${task.id}:shell:${layer}`);
+      drawProjectedOrbit(parent, layerRadii[layer], .4 + layer * .44, (seed % 628) / 100, task.planetColor || "#42dcff", .115, timestamp, true);
+    }
+    details.forEach((item, index) => {
+      const layer = index % 2, positionInLayer = layerIndices[layer]++;
+      const seed = orbitalSeed(`${task.id}:${item.key}`);
+      const baseAngle = (seed / 0xffffffff) * TAU;
+      const spread = positionInLayer / Math.max(1, layerCounts[layer]) * TAU;
+      const speed = (layer ? -.00036 : .00042) * (1 + (seed % 13) * .012) * data.visual.speed;
+      const angle = baseAngle + spread + timestamp * speed;
+      const node = (seed % 628) / 100;
+      const position = orbitPoint(parent, angle, layerRadii[layer], .4 + layer * .44, node, timestamp);
+      drawOrbitalDetail({ ...hit, x: position.x, y: position.y }, item, angle, satelliteRadius * position.scale, timestamp);
+      nextDetailHits.push({ taskId: task.id, key: item.key, x: position.x, y: position.y, radius: satelliteRadius * position.scale * .92 });
+    });
+  }
+
+  function mascotOrbitPosition(core, timestamp) {
+    const orbit = mascotOrbitRadius(core);
+    const angle = timestamp * .000078 * data.visual.speed + 1.18;
+    return orbitPoint(core, angle, orbit, .92, -.48, timestamp);
+  }
+
+  function mascotOrbitRadius(core) {
+    const spread = DESKTOP_WIDGET ? .17 : .44;
+    return core.radius + Math.min(width, height) * spread * data.visual.zoom;
+  }
+
+  function drawMascotPlanet(position, core, timestamp) {
+    const radius = 11.5 * data.visual.planetScale * data.visual.zoom * position.scale;
+    const focus = data.visual.focusTaskId ? planetHits.find((hit) => hit.id === data.visual.focusTaskId) : null;
+    const isFocused = data.visual.focusTaskId === MASCOT_ID;
+    const blur = focus && !isFocused && data.visual.zoom >= 2.4 ? clamp(.7 + (data.visual.zoom - 2.4) * .55, .7, 3.2) : 0;
+    ctx.save(); ctx.globalAlpha = blur ? .48 : .98;
+    if (blur) ctx.filter = `blur(${blur.toFixed(1)}px)`;
+    if (data.visual.showOrbits) drawProjectedOrbit(core, mascotOrbitRadius(core), .92, -.48, "#ca72ff", .17, timestamp);
+    const glow = ctx.createRadialGradient(position.x, position.y, 0, position.x, position.y, radius * 3.5);
+    glow.addColorStop(0, "rgba(209,104,255,.8)"); glow.addColorStop(.35, "rgba(168,87,255,.34)"); glow.addColorStop(1, "rgba(168,87,255,0)");
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(position.x, position.y, radius * 3.5, 0, TAU); ctx.fill();
+    ctx.save(); ctx.translate(position.x, position.y); ctx.rotate(timestamp * .00016);
+    ctx.strokeStyle = "rgba(227,193,255,.5)"; ctx.lineWidth = Math.max(.6, radius * .045); ctx.beginPath(); ctx.ellipse(0, 0, radius * 1.48, radius * .43, -.12, 0, TAU); ctx.stroke();
+    const surface = ctx.createRadialGradient(-radius * .38, -radius * .42, .5, radius * .2, radius * .2, radius * 1.25);
+    surface.addColorStop(0, "#fffaff"); surface.addColorStop(.13, "#f2c5ff"); surface.addColorStop(.42, "#bd68ef"); surface.addColorStop(.78, "#542278"); surface.addColorStop(1, "#0c0a18");
+    ctx.shadowColor = "rgba(194,102,255,.72)"; ctx.shadowBlur = radius * .8;
+    ctx.fillStyle = surface; ctx.beginPath(); ctx.arc(0, 0, radius, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.save(); ctx.beginPath(); ctx.arc(0, 0, radius * .92, 0, TAU); ctx.clip();
+    ctx.fillStyle = "rgba(7,7,18,.35)"; ctx.font = `700 ${Math.max(8, radius * .88)}px \"IBM Plex Mono\",monospace`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("?", 0, radius * .04);
+    ctx.restore(); ctx.restore(); ctx.restore();
+  }
+
+  function showPlayfulMessage(message) {
+    const toast = byId("playfulToast");
+    if (!toast) return;
+    toast.textContent = message;
+    toast.classList.add("is-visible");
+    clearTimeout(playfulToastTimer);
+    playfulToastTimer = setTimeout(() => toast.classList.remove("is-visible"), 4200);
+  }
+
+  function playRandomKlaxon() {
+    const Audio = window.AudioContext || window.webkitAudioContext;
+    if (!Audio) return;
+    try {
+      audioContext ||= new Audio();
+      if (audioContext.state === "suspended") audioContext.resume();
+      const sequence = KLAXON_NOTES[Math.floor(Math.random() * KLAXON_NOTES.length)];
+      const start = audioContext.currentTime + .015;
+      sequence.forEach((frequency, index) => {
+        const onset = start + index * .18;
+        const oscillator = audioContext.createOscillator();
+        const envelope = audioContext.createGain();
+        oscillator.type = index % 2 ? "square" : "sawtooth";
+        oscillator.frequency.setValueAtTime(frequency, onset);
+        oscillator.frequency.exponentialRampToValueAtTime(frequency * (index === 1 ? .82 : 1.12), onset + .15);
+        envelope.gain.setValueAtTime(.0001, onset);
+        envelope.gain.exponentialRampToValueAtTime(.12, onset + .018);
+        envelope.gain.exponentialRampToValueAtTime(.0001, onset + .16);
+        oscillator.connect(envelope); envelope.connect(audioContext.destination);
+        oscillator.start(onset); oscillator.stop(onset + .17);
+      });
+    } catch (_) { showPlayfulMessage("La planète a tenté un klaxon, mais le navigateur a coupé le son."); }
+  }
+
+  function openPinballDialog() {
+    const dialog = byId("pinballDialog");
+    const mount = byId("sitePinballGame");
+    if (!dialog || !mount || !window.CockpitPinball) return showPlayfulMessage("La bille s’est cachée dans un cratère. Réessayez dans un instant !");
+    if (dialog.open) return;
+    pinballOpen = true;
+    dialog.showModal();
+    pinballMount = window.CockpitPinball.mount(mount, { onClose: () => { if (dialog.open) dialog.close(); } });
+  }
+
+  function closePinballDialog() {
+    pinballMount?.destroy?.(); pinballMount = null; pinballOpen = false;
+    const dialog = byId("pinballDialog");
+    if (dialog?.open) dialog.close();
+  }
+
+  function handleMascotPlanetClick() {
+    const choice = Math.floor(Math.random() * 3);
+    if (choice === 0) showPlayfulMessage(MASCOT_JOKES[Math.floor(Math.random() * MASCOT_JOKES.length)]);
+    else if (choice === 1) { showPlayfulMessage("Le mini-klaxon de la planète !"); playRandomKlaxon(); }
+    else if (DESKTOP_WIDGET && window.qgScene?.openPinball) window.qgScene.openPinball();
+    else openPinballDialog();
+  }
+
   function drawFrame(timestamp) {
     if (!DESKTOP_WIDGET && timestamp - lastDraw < 15) { requestAnimationFrame(drawFrame); return; }
     const dt = lastDraw ? Math.min(64, timestamp - lastDraw) : 16;
     lastDraw = timestamp;
     const wallTime = now();
+    nextPlanetHits = [];
+    nextDetailHits = [];
     coreCurrent.x += (coreTarget.x - coreCurrent.x) * Math.min(1, dt * .012);
     coreCurrent.y += (coreTarget.y - coreCurrent.y) * Math.min(1, dt * .012);
     ctx.clearRect(0, 0, width, height);
@@ -788,6 +1081,8 @@
     const absorbing = openTasks.filter((task) => taskPhase(task, wallTime) === "elapsed" && wallTime - taskDeadline(task) < 1750);
     const active = visible.concat(absorbing);
     const core = coreGeometry();
+    const mascot = mascotOrbitPosition(core, timestamp);
+    nextPlanetHits.push({ kind: "mascot", id: MASCOT_ID, x: mascot.x, y: mascot.y, radius: 14 * data.visual.zoom * mascot.scale, depth: mascot.depth });
     let urgency = 0;
     if (active.length) urgency = Math.max(...active.map((task) => taskProgress(task, wallTime)));
     drawDistantOrbitals(core, timestamp);
@@ -809,8 +1104,16 @@
     });
     const front = ordered.filter((item) => !rear.includes(item));
     rear.forEach(({ task, index }) => drawTaskPlanet(task, index, core, timestamp, wallTime));
+    if (mascot.depth > 0) drawMascotPlanet(mascot, core, timestamp);
     drawCore(core, timestamp, urgency);
     front.forEach(({ task, index }) => drawTaskPlanet(task, index, core, timestamp, wallTime));
+    if (mascot.depth <= 0) drawMascotPlanet(mascot, core, timestamp);
+    const zoomTarget = data.visual.focusTaskId && data.visual.zoom >= 2.4
+      ? nextPlanetHits.find((hit) => hit.id === data.visual.focusTaskId && hit.kind === "task")
+      : null;
+    if (zoomTarget) drawTaskDetailSatellites(zoomTarget.task, zoomTarget, timestamp, wallTime);
+    planetHits = nextPlanetHits;
+    detailHits = nextDetailHits;
     if (DESKTOP_WIDGET && timestamp - lastPositionSent > 70) updateHitArea();
     requestAnimationFrame(drawFrame);
   }
@@ -832,7 +1135,58 @@
 
   function nearCore(point, padding = 9) { return Math.hypot(point.x - coreHit.x, point.y - coreHit.y) <= coreHit.radius + padding; }
 
+  function nearestHit(point, hits, padding = 12) {
+    let best = null, bestDistance = Infinity;
+    for (const hit of hits) {
+      const distance = Math.hypot(point.x - hit.x, point.y - hit.y);
+      if (distance <= hit.radius + padding && distance < bestDistance) { best = hit; bestDistance = distance; }
+    }
+    return best;
+  }
+
+  function pickZoomHit(point) {
+    const detail = nearestHit(point, detailHits, 18);
+    if (detail) return { kind: "detail", id: detail.taskId };
+    const hit = nearestHit(point, planetHits, 14);
+    return hit ? { kind: hit.kind, id: hit.id } : null;
+  }
+
+  function zoomAtPoint(point, nextZoom) {
+    const previousZoom = data.visual.zoom;
+    if (Math.abs(nextZoom - previousZoom) < .001) return;
+    const current = coreGeometry();
+    const anchorX = point.x / Math.max(1, width), anchorY = point.y / Math.max(1, height);
+    const ratio = nextZoom / previousZoom;
+    const nextCoreX = anchorX - (anchorX - current.x / width) * ratio;
+    const nextCoreY = anchorY - (anchorY - current.y / height) * ratio;
+    data.visual.zoomPan = { x: clamp(nextCoreX - coreCurrent.x, -2.5, 2.5), y: clamp(nextCoreY - coreCurrent.y, -2.5, 2.5) };
+    data.visual.zoom = nextZoom;
+    if (nextZoom < 2.4) data.visual.focusTaskId = null;
+    coreHit = { ...coreGeometry(), radius: coreGeometry().radius * 1.18 };
+  }
+
+  function scheduleViewSave() {
+    clearTimeout(viewSaveTimer);
+    viewSaveTimer = setTimeout(() => { viewSaveTimer = 0; saveViewGesture(); }, 170);
+  }
+
+  function handleWheelZoom(event) {
+    const point = pointerPoint(event);
+    const modeScale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1;
+    const delta = clamp(event.deltaY * modeScale, -600, 600);
+    if (!delta) return;
+    const picked = pickZoomHit(point);
+    if (picked) data.visual.focusTaskId = picked.id;
+    else if (nearCore(point, 8)) data.visual.focusTaskId = null;
+    const nextZoom = clamp(data.visual.zoom * Math.exp(-delta * .00115), .65, MAX_ZOOM);
+    zoomAtPoint(point, nextZoom);
+    if (DESKTOP_WIDGET) setWidgetInput(true);
+    scheduleViewSave();
+    event.preventDefault();
+  }
+
   function setCenterFromPoint(point) {
+    data.visual.zoomPan = { x: 0, y: 0 };
     coreTarget = { x: clamp(point.x / width, 0.07, 0.93), y: clamp(point.y / height, 0.09, 0.91) };
     data.visual.center = { ...coreTarget };
     if (!DESKTOP_WIDGET) save();
@@ -846,6 +1200,7 @@
     draggingCore = false;
     if (DESKTOP_WIDGET) {
       window.qgScene?.saveWidgetPosition?.({ ...data.visual.center });
+      saveViewGesture();
       setWidgetInput(false);
     } else save();
     dragPointerId = null;
@@ -855,7 +1210,7 @@
 
   function saveViewGesture() {
     if (DESKTOP_WIDGET) {
-      window.qgScene?.saveWidgetView?.({ viewYaw: data.visual.viewYaw, viewPitch: data.visual.viewPitch, zoom: data.visual.zoom });
+      window.qgScene?.saveWidgetView?.({ viewYaw: data.visual.viewYaw, viewPitch: data.visual.viewPitch, zoom: data.visual.zoom, zoomPan: { ...data.visual.zoomPan }, focusTaskId: data.visual.focusTaskId });
       window.qgScene?.saveWidgetPosition?.({ ...data.visual.center });
     } else save();
   }
@@ -878,11 +1233,14 @@
     if (target?.closest("button,input,select,textarea,a,summary,[data-action],[data-panel-drag]")) return;
     if (event.touches.length >= 2) {
       const [first, second] = [event.touches[0], event.touches[1]].map(pointFromTouch);
+      const center = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+      const picked = pickZoomHit(center);
       touchGesture = {
         mode: "pinch", identifiers: [event.touches[0].identifier, event.touches[1].identifier],
-        center: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+        center,
         distance: Math.max(1, Math.hypot(first.x - second.x, first.y - second.y)),
-        startCenter: { ...data.visual.center }, startZoom: data.visual.zoom, moved: false
+        startCore: { x: coreGeometry().x / Math.max(1, width), y: coreGeometry().y / Math.max(1, height) },
+        startZoom: data.visual.zoom, focusTaskId: picked?.id || data.visual.focusTaskId, moved: false
       };
       event.preventDefault();
       return;
@@ -892,7 +1250,7 @@
       touchGesture = {
         mode: "rotate", identifier: touch.identifier, x: point.x, y: point.y,
         viewYaw: data.visual.viewYaw, viewPitch: data.visual.viewPitch,
-        startOnCore: nearCore(point, 3), moved: false
+        startOnCore: nearCore(point, 3), startOnPlanetId: nearestHit(point, planetHits, 8)?.kind === "mascot" ? "mascot" : null, moved: false
       };
     }
   }
@@ -910,12 +1268,16 @@
       const dx = center.x - gesture.center.x, dy = center.y - gesture.center.y;
       if (Math.abs(distance - gesture.distance) > 4 || Math.hypot(dx, dy) > 4) gesture.moved = true;
       if (gesture.moved) {
-        data.visual.zoom = clamp(gesture.startZoom * distance / gesture.distance, 0.65, 2.25);
-        data.visual.center = {
-          x: clamp(gesture.startCenter.x + dx / Math.max(1, width), 0.07, 0.93),
-          y: clamp(gesture.startCenter.y + dy / Math.max(1, height), 0.09, 0.91)
+        const zoom = clamp(gesture.startZoom * distance / gesture.distance, 0.65, MAX_ZOOM);
+        const zoomRatio = zoom / gesture.startZoom;
+        const anchorX = gesture.center.x / Math.max(1, width), anchorY = gesture.center.y / Math.max(1, height);
+        const desiredCore = {
+          x: anchorX - (anchorX - gesture.startCore.x) * zoomRatio + dx / Math.max(1, width),
+          y: anchorY - (anchorY - gesture.startCore.y) * zoomRatio + dy / Math.max(1, height)
         };
-        coreTarget = { ...data.visual.center };
+        data.visual.zoom = zoom;
+        data.visual.zoomPan = { x: clamp(desiredCore.x - coreCurrent.x, -2.5, 2.5), y: clamp(desiredCore.y - coreCurrent.y, -2.5, 2.5) };
+        data.visual.focusTaskId = zoom >= 2.4 ? gesture.focusTaskId : null;
       }
       event.preventDefault();
       return;
@@ -937,8 +1299,9 @@
     const finished = touchGesture;
     touchGesture = null;
     if (finished.moved) saveViewGesture();
+    else if (finished.mode === "rotate" && finished.startOnPlanetId === "mascot") handleMascotPlanetClick();
     else if (finished.mode === "rotate" && finished.startOnCore && !DESKTOP_WIDGET) openFocusDialog();
-    if (DESKTOP_WIDGET) setWidgetInput(false);
+    if (DESKTOP_WIDGET && !pinballOpen) setWidgetInput(false);
   }
 
   function finishViewDrag(pointerId) {
@@ -946,8 +1309,9 @@
     const finished = viewDrag;
     viewDrag = null;
     if (finished.moved) saveViewGesture();
+    else if (finished.startOnPlanetId === "mascot") handleMascotPlanetClick();
     else if (finished.startOnCore && !DESKTOP_WIDGET) openFocusDialog();
-    if (DESKTOP_WIDGET) setWidgetInput(false);
+    if (DESKTOP_WIDGET && !pinballOpen) setWidgetInput(false);
   }
 
   canvas.addEventListener("pointermove", (event) => {
@@ -955,7 +1319,7 @@
     if (event.pointerType === "touch") return;
     if (viewDrag && event.pointerId === viewDrag.pointerId) { applyViewDrag(viewDrag, point); return; }
     if (!draggingCore) {
-      if (DESKTOP_WIDGET) setWidgetInput(nearCore(point, 13));
+      if (DESKTOP_WIDGET) setWidgetInput(nearCore(point, 13) || Boolean(nearestHit(point, planetHits, 12)) || Boolean(nearestHit(point, detailHits, 12)));
       return;
     }
     if (event.pointerId !== dragPointerId) return;
@@ -971,8 +1335,9 @@
       if (DESKTOP_WIDGET) setWidgetInput(true);
       return;
     }
-    if (event.button === 0 && (!DESKTOP_WIDGET || nearCore(point, 13))) {
-      viewDrag = { pointerId: event.pointerId, x: point.x, y: point.y, viewYaw: data.visual.viewYaw, viewPitch: data.visual.viewPitch, startOnCore: nearCore(point, 3), moved: false };
+    const hit = nearestHit(point, planetHits, 12);
+    if (event.button === 0 && (!DESKTOP_WIDGET || nearCore(point, 13) || hit || nearestHit(point, detailHits, 12))) {
+      viewDrag = { pointerId: event.pointerId, x: point.x, y: point.y, viewYaw: data.visual.viewYaw, viewPitch: data.visual.viewPitch, startOnCore: nearCore(point, 3), startOnPlanetId: hit?.kind === "mascot" ? "mascot" : null, moved: false };
       try { canvas.setPointerCapture(event.pointerId); } catch (_) {}
       if (DESKTOP_WIDGET) setWidgetInput(true);
       event.preventDefault();
@@ -994,7 +1359,8 @@
     finishViewDrag(event.pointerId);
   });
   canvas.addEventListener("contextmenu", (event) => { if (nearCore(pointerPoint(event), 5)) event.preventDefault(); });
-  canvas.addEventListener("pointerleave", () => { if (!draggingCore && !viewDrag && !touchGesture && DESKTOP_WIDGET) setWidgetInput(false); });
+  canvas.addEventListener("wheel", handleWheelZoom, { passive: false });
+  canvas.addEventListener("pointerleave", () => { if (!draggingCore && !viewDrag && !touchGesture && !pinballOpen && DESKTOP_WIDGET) setWidgetInput(false); });
   document.addEventListener("touchstart", beginTouchGesture, { passive: false, capture: true });
   document.addEventListener("touchmove", moveTouchGesture, { passive: false, capture: true });
   document.addEventListener("touchend", finishTouchGesture, { passive: false, capture: true });
@@ -1004,6 +1370,12 @@
   byId("panelContent").addEventListener("input", handleInput);
   byId("panelContent").addEventListener("change", handleChange);
   byId("panelContent").addEventListener("submit", handleSubmit);
+  byId("pinballDialog").addEventListener("cancel", () => {
+    pinballMount?.destroy?.(); pinballMount = null; pinballOpen = false;
+  });
+  byId("pinballDialog").addEventListener("close", () => {
+    pinballMount?.destroy?.(); pinballMount = null; pinballOpen = false;
+  });
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
   byId("syncWidget").addEventListener("click", syncWidget);
   byId("panelClose").addEventListener("click", () => {

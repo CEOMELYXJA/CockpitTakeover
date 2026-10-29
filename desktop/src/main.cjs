@@ -30,6 +30,7 @@ if (process.argv.includes("--qg-ambient-host")) {
   const MAX_TASKS = 500;
   let tray = null;
   let panel = null;
+  let pinballWindow = null;
   let ambientProcess = null;
   let ambientRestartTimer = null;
   let ambientStatus = { status: "starting", message: "Démarrage du widget transparent…" };
@@ -93,7 +94,12 @@ if (process.argv.includes("--qg-ambient-host")) {
     const widgetView = rawWidgetView ? {
       viewYaw: ((bounded(rawWidgetView.viewYaw, 0, Math.PI * 2, 0) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2),
       viewPitch: bounded(rawWidgetView.viewPitch, -1.15, 1.15, 0),
-      zoom: bounded(rawWidgetView.zoom, 0.65, 2.25, 1)
+      zoom: bounded(rawWidgetView.zoom, 0.65, 6, 1),
+      zoomPan: {
+        x: bounded(rawWidgetView.zoomPan?.x, -2.5, 2.5, 0),
+        y: bounded(rawWidgetView.zoomPan?.y, -2.5, 2.5, 0)
+      },
+      focusTaskId: /^[a-zA-Z0-9_-]{1,80}$/.test(String(rawWidgetView.focusTaskId || "")) ? String(rawWidgetView.focusTaskId) : null
     } : null;
     return {
       side: next.side === "left" ? "left" : "right",
@@ -194,7 +200,12 @@ if (process.argv.includes("--qg-ambient-host")) {
       showOrbits: raw.showOrbits !== false,
       viewYaw: bounded(raw.viewYaw, 0, Math.PI * 2, 0),
       viewPitch: bounded(raw.viewPitch, -1.15, 1.15, 0),
-      zoom: bounded(raw.zoom, 0.65, 2.25, 1),
+      zoom: bounded(raw.zoom, 0.65, 6, 1),
+      zoomPan: {
+        x: bounded(raw.zoomPan?.x, -2.5, 2.5, 0),
+        y: bounded(raw.zoomPan?.y, -2.5, 2.5, 0)
+      },
+      focusTaskId: /^[a-zA-Z0-9_-]{1,80}$/.test(String(raw.focusTaskId || "")) ? String(raw.focusTaskId) : null,
       coreColor: /^#[0-9a-fA-F]{6}$/.test(String(raw.coreColor || "")) ? String(raw.coreColor).toLowerCase() : "#42dcff",
       coreCraters: ["none", "few", "many", "everest"].includes(raw.coreCraters) ? raw.coreCraters : "few",
       center: { x: bounded(center.x, 0.08, 0.92, 0.5), y: bounded(center.y, 0.1, 0.9, 0.53) }
@@ -316,6 +327,7 @@ if (process.argv.includes("--qg-ambient-host")) {
         queueSettingsWrite().catch((error) => console.error("Widget view save failed:", error.message));
         syncViews();
       }
+      if (message.type === "pinball") openPinballWindow();
       if (message.type === "shell-unavailable" || message.type === "attach-error" || message.type === "shell-error") {
         setAmbientStatus("unavailable", message.message || "La couche Windows reste masquée pour protéger vos icônes.");
         showShellNotice(message.message || "La couche de fond Windows reste masquée pour protéger vos icônes.");
@@ -527,6 +539,35 @@ if (process.argv.includes("--qg-ambient-host")) {
     tray.on("double-click", openPanel);
     trayMenu();
   }
+
+  function openPinballWindow() {
+    if (pinballWindow && !pinballWindow.isDestroyed()) {
+      pinballWindow.show(); pinballWindow.focus();
+      return;
+    }
+    const area = screen.getPrimaryDisplay().workArea;
+    const width = Math.min(390, area.width - 24);
+    const height = Math.min(670, area.height - 24);
+    pinballWindow = new BrowserWindow({
+      x: Math.round(area.x + (area.width - width) / 2),
+      y: Math.round(area.y + (area.height - height) / 2),
+      width, height, show: false, frame: false, transparent: true,
+      backgroundColor: "#00000000", resizable: false, movable: false,
+      minimizable: false, maximizable: false, fullscreenable: false,
+      skipTaskbar: true, hasShadow: true, alwaysOnTop: true,
+      webPreferences: { preload: path.join(__dirname, "pinball-preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false }
+    });
+    pinballWindow.setAlwaysOnTop(true, "floating");
+    const entry = app.isPackaged ? path.join(process.resourcesPath, "widget", "pinball.html") : path.resolve(__dirname, "../../pinball.html");
+    pinballWindow.loadFile(entry);
+    pinballWindow.once("ready-to-show", () => { if (pinballWindow && !pinballWindow.isDestroyed()) { pinballWindow.show(); pinballWindow.focus(); } });
+    pinballWindow.on("closed", () => { pinballWindow = null; });
+  }
+
+  ipcMain.on("qg:pinball-close", (event) => {
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    if (senderWindow && senderWindow === pinballWindow) senderWindow.close();
+  });
 
   app.whenReady().then(async () => {
     app.setAppUserModelId("ca.ceomelyxja.qgdesktop");

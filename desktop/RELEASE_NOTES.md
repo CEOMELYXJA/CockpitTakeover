@@ -1,7 +1,8 @@
-# Cockpit Takeover Widget 0.10.0
+# Cockpit Takeover Widget 0.11.0
 
-- Le panneau est centré, déplaçable et conserve sa position.
-- La carte reçoit un champ d’étoiles 50 fois plus dense, rendu en couche pré-calculée pour préserver sa fluidité.
-- Les planètes acceptent jusqu’à 20 anneaux fins et translucides.
-- Les réglages du noyau central (couleur et relief) sont synchronisés avec le widget Windows.
-- La rotation, le mouvement orbital et le déplacement du noyau restent ceux du point de restauration 0.9.0.
+- La molette zoome autour du pointeur jusqu’au niveau de détail rapproché; les planètes éloignées s’estompent et les informations orbitent autour de la planète ciblée.
+- À fort zoom, les détails apparaissent en petites sphères colorées, avec la date et l’heure sur deux lignes.
+- Le relief du noyau gagne une silhouette douce et des élévations arrondies; les cratères restent présents, sans pics exagérés.
+- Une petite planète surprise reste en orbite même quand la liste est vide : blagues, quinze variantes de klaxon et mini pinball.
+- Le mini pinball réutilise le même jeu dans le site et dans une fenêtre temporaire du widget Windows; les icônes du bureau restent cliquables autour de cette fenêtre.
+- Les réglages de zoom, de cadrage et de planète ciblée se conservent dans le widget.

@@ -5,7 +5,7 @@ const path = require("node:path");
 
 const repository = path.resolve(__dirname, "../../");
 const output = path.join(__dirname, "..", "widget");
-const appFiles = ["index.html", "cockpit.js", "cockpit.css", "manifest.webmanifest", "service-worker.js", "icon.svg"];
+const appFiles = ["index.html", "cockpit.js", "cockpit.css", "pinball.html", "pinball.js", "pinball.css", "manifest.webmanifest", "service-worker.js", "icon.svg"];
 
 fs.mkdirSync(output, { recursive: true });
 for (const file of appFiles) {

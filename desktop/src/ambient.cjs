@@ -207,8 +207,18 @@ ipcMain.on("qg:scene-view", (_event, view) => {
   sendToParent({ type: "widget-view", payload: {
     viewYaw: Number.isFinite(view.viewYaw) ? view.viewYaw : 0,
     viewPitch: Number.isFinite(view.viewPitch) ? view.viewPitch : 0,
-    zoom: Number.isFinite(view.zoom) ? view.zoom : 1
+    zoom: Number.isFinite(view.zoom) ? Math.max(.65, Math.min(6, view.zoom)) : 1,
+    zoomPan: {
+      x: Number.isFinite(view.zoomPan?.x) ? Math.max(-2.5, Math.min(2.5, view.zoomPan.x)) : 0,
+      y: Number.isFinite(view.zoomPan?.y) ? Math.max(-2.5, Math.min(2.5, view.zoomPan.y)) : 0
+    },
+    focusTaskId: /^[a-zA-Z0-9_-]{1,80}$/.test(String(view.focusTaskId || "")) ? String(view.focusTaskId) : null
   } });
+});
+
+ipcMain.on("qg:scene-pinball", (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (window && scenes.includes(window)) sendToParent({ type: "pinball" });
 });
 
 process.on("message", (message) => {

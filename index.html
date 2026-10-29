@@ -8,6 +8,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./cockpit.css">
+  <link rel="stylesheet" href="./pinball.css">
   <script>if(new URLSearchParams(location.search).get("desktopWidget")==="1")document.documentElement.classList.add("desktop-widget")</script>
   <title>Cockpit Takeover — Votre espace en mouvement</title>
 </head>
@@ -40,7 +41,12 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <input id="taskImport" type="file" accept=".txt,.md,.markdown,.json,text/plain,application/json" hidden>
   </div>
+  <div id="playfulToast" class="playful-toast" role="status" aria-live="polite"></div>
+  <dialog id="pinballDialog" class="pinball-dialog" aria-label="Mini pinball orbital">
+    <div id="sitePinballGame"></div>
+  </dialog>
 
+  <script src="./pinball.js" defer></script>
   <script src="./cockpit.js" defer></script>
   <script>if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./service-worker.js",{scope:"./"}).catch(()=>{}))</script>
 </body>
