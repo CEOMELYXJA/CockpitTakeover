@@ -1,15 +1,15 @@
 {
   "id": "./",
-  "name": "QG – Cockpit de vie",
-  "short_name": "QG Cockpit",
-  "description": "Un cockpit spatial animé pour organiser ses projets, ses tâches et ses routines.",
+  "name": "Cockpit Takeover — espace de travail",
+  "short_name": "Cockpit Takeover",
+  "description": "Une carte orbitale de rappels clairs, personnalisable et synchronisable avec le widget Windows.",
   "lang": "fr-CA",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#070b15",
-  "theme_color": "#070b15",
+  "background_color": "#0b1014",
+  "theme_color": "#0b1014",
   "icons": [
     {
       "src": "./icon.svg",

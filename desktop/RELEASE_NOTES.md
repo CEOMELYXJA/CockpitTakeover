@@ -1,22 +1,13 @@
-# DumbFuckCockpit Widget 0.4.3
+# DumbFuckCockpit Widget 0.5.0
 
-Changer le widget de côté le déplace maintenant directement sur le bureau, sans détruire puis recréer sa scène. Cette correction évite que le visuel disparaisse lorsque vous ajustez sa position. Le mouvement, l’opacité et la position restent enregistrés.
+Le widget affiche maintenant les rappels du site Cockpit Takeover comme des planètes sans texte. Pendant le délai choisi, chaque planète se rapproche du centre et bat doucement à l’approche de l’échéance. À la fin, elle rejoint le centre; la tâche reste ouverte dans le site jusqu’à ce que vous la terminiez.
 
-Le widget rejoint aussi une nouvelle position d’écran après le chargement de sa scène, même si un réglage est changé pendant le démarrage. Une détection temporaire du fond Windows ne détruit plus un widget déjà correctement attaché.
+Pour synchroniser, ouvrez [Cockpit Takeover](https://ceomelyxja.github.io/CockpitTakeover/), cliquez sur **Synchroniser le widget**, puis laissez le fichier se télécharger dans **Téléchargements**. L’application installée le repère automatiquement, y compris après un redémarrage. Les tâches et préférences restent sur votre ordinateur et ne sont pas envoyées sur GitHub.
 
-Le panneau de réglages comprend un bouton **Réafficher le widget** qui redémarre la couche de bureau au besoin.
+Le mouvement continue à vitesse normale lorsque le widget est derrière une autre fenêtre. Sur chaque écran, seule la planète centrale accepte le clic droit maintenu et le glisser; les autres zones restent transparentes aux clics et aux icônes du bureau.
 
-Cette version comprend les réglages simplifiés et la correction du démarrage de la couche transparente des versions précédentes.
+Le menu Windows conserve l’opacité, le mouvement réduit, l’affichage sur le bureau et le démarrage avec Windows. Il indique aussi la dernière synchronisation et permet de recentrer le noyau. Les réglages sont conservés après fermeture.
+
+Le widget reste sur sa couche de bureau transparente. Il couvre chaque écran pour que son centre puisse être déplacé partout, mais il reste derrière les icônes Windows.
 
 Compatible avec Windows 10 et Windows 11. L’installateur n’est pas signé; Windows peut afficher un avertissement d’éditeur non vérifié.
-
-L’installation n’offre plus de choix de dossier. Elle place les fichiers du programme dans le dossier standard des applications Windows, crée un seul raccourci sur le Bureau et démarre le widget après l’installation.
-
-Le panneau de réglages ne s’ouvre pas automatiquement. Double-cliquez sur le raccourci du Bureau pendant que le widget fonctionne pour ouvrir les réglages. Fermer ce panneau laisse le widget actif.
-
-Le site web est la version interactive pour gérer les tâches. Le widget est son visuel animé sur le bureau. Il n’est pas nécessaire d’ouvrir les deux; les tâches du site ne sont pas synchronisées avec le widget. La scène laisse passer les clics vers les icônes Windows.
-
-Cette version comprend aussi la correction du démarrage de la couche transparente publiée en 0.4.1.
-
-Compatible avec Windows 10 et Windows 11. L’installateur n’est pas signé et Windows peut afficher un avertissement d’éditeur non vérifié.
-

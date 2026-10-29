@@ -36,7 +36,8 @@ if (process.argv.includes("--qg-ambient-host")) {
   let tasksPath = "";
   let settingsPath = "";
   let tasks = [];
-  let settings = { side: "right", opacity: 0.82, motion: "measured", fieldEnabled: true, startWithWindows: false, panelBounds: null };
+  let settings = { side: "right", opacity: 0.82, motion: "measured", fieldEnabled: true, startWithWindows: false, panelBounds: null, widgetPosition: null };
+  let siteSync = { subjects: [], tasks: [], visual: null, savedAt: 0 };
   let quitting = false;
   let appReady = false;
   let secondInstancePending = false;
@@ -44,6 +45,9 @@ if (process.argv.includes("--qg-ambient-host")) {
   let tasksLoadedFromBackup = false;
   let taskWriteQueue = Promise.resolve();
   let settingsWriteQueue = Promise.resolve();
+  let siteSyncPath = "";
+  let downloadsPoll = null;
+  let latestDownloadStamp = 0;
   const lastNotices = new Map();
 
   const safeText = (value, max) => String(value == null ? "" : value).trim().slice(0, max);
@@ -81,13 +85,17 @@ if (process.argv.includes("--qg-ambient-host")) {
     const bounds = next.panelBounds && typeof next.panelBounds === "object" ? next.panelBounds : null;
     const validBounds = bounds && [bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)
       ? { x: Math.round(bounds.x), y: Math.round(bounds.y), width: 420, height: 740 } : null;
+    const position = next.widgetPosition && typeof next.widgetPosition === "object" ? next.widgetPosition : null;
+    const widgetPosition = position && Number.isFinite(position.x) && Number.isFinite(position.y)
+      ? { x: Math.max(0.07, Math.min(0.93, Number(position.x))), y: Math.max(0.09, Math.min(0.91, Number(position.y))) } : null;
     return {
       side: next.side === "left" ? "left" : "right",
       opacity: Math.max(0.25, Math.min(1, Number(next.opacity) || 0.82)),
       motion: next.motion === "reduced" ? "reduced" : "measured",
       fieldEnabled: next.fieldEnabled !== false,
       startWithWindows: Boolean(next.startWithWindows),
-      panelBounds: validBounds
+      panelBounds: validBounds,
+      widgetPosition
     };
   }
 
@@ -115,8 +123,104 @@ if (process.argv.includes("--qg-ambient-host")) {
     catch (error) { if (error && error.code === "ENOENT") return fallback; throw error; }
   }
 
+  function cleanSiteSync(value) {
+    if (!value || value.format !== "cockpittakeover-widget-sync" || value.version !== 1 || !Array.isArray(value.subjects) || !Array.isArray(value.tasks) || value.subjects.length > 24 || value.tasks.length > 500) {
+      throw new Error("Le fichier ne correspond pas à une synchronisation Cockpit Takeover valide.");
+    }
+    const subjects = value.subjects.map((entry) => {
+      const item = entry && typeof entry === "object" ? entry : {};
+      const id = safeText(item.id, 60);
+      if (!/^[a-zA-Z0-9_-]{1,60}$/.test(id)) throw new Error("Un sujet contient un identifiant invalide.");
+      return {
+        id, name: safeText(item.name, 48) || "Sujet sans nom", description: safeText(item.description, 260),
+        color: /^#[0-9a-fA-F]{6}$/.test(item.color) ? item.color : "#9bb7ac",
+        size: Math.max(0.55, Math.min(1.65, Number(item.size) || 1)),
+        durationMinutes: Math.max(5, Math.min(1440, Number(item.durationMinutes) || 25))
+      };
+    });
+    const subjectIds = new Set(subjects.map((item) => item.id));
+    const tasks = value.tasks.map((entry) => {
+      const item = entry && typeof entry === "object" ? entry : {};
+      const id = /^[a-zA-Z0-9_-]{1,80}$/.test(String(item.id || "")) ? String(item.id) : crypto.randomUUID();
+      const duration = Number(item.durationMinutes);
+      const startedAt = Number(item.startedAt);
+      const createdAt = Number(item.createdAt);
+      return {
+        id, title: safeText(item.title, 180), description: safeText(item.description, 700),
+        subjectId: subjectIds.has(item.subjectId) ? item.subjectId : null,
+        status: ["queued", "active", "done", "archived"].includes(item.status) ? item.status : "queued",
+        durationMinutes: Number.isFinite(duration) ? Math.max(5, Math.min(1440, duration)) : 25,
+        priority: [1, 2, 3].includes(Number(item.priority)) ? Number(item.priority) : 2,
+        createdAt: Number.isFinite(createdAt) && createdAt > 0 ? createdAt : Date.now(),
+        startedAt: Number.isFinite(startedAt) && startedAt > 0 ? startedAt : null,
+        completedAt: Number.isFinite(Number(item.completedAt)) && Number(item.completedAt) > 0 ? Number(item.completedAt) : null,
+        reason: safeText(item.reason, 300)
+      };
+    }).filter((item) => item.title);
+    const raw = value.visual && typeof value.visual === "object" ? value.visual : {};
+    const center = raw.center && typeof raw.center === "object" ? raw.center : {};
+    const bounded = (number, low, high, fallback) => Number.isFinite(Number(number)) ? Math.max(low, Math.min(high, Number(number))) : fallback;
+    const visual = {
+      planetCount: Math.round(bounded(raw.planetCount, 1, 16, 8)),
+      planetScale: bounded(raw.planetScale, 0.55, 1.65, 1),
+      speed: bounded(raw.speed, 0.2, 1.8, 0.72),
+      stars: Math.round(bounded(raw.stars, 12, 64, 30)),
+      showOrbits: raw.showOrbits !== false,
+      center: { x: bounded(center.x, 0.08, 0.92, 0.5), y: bounded(center.y, 0.1, 0.9, 0.53) }
+    };
+    return { subjects, tasks, visual, savedAt: Number(value.savedAt) || Date.now() };
+  }
+
   function ambientSnapshot() {
-    return { categories: CATEGORIES, tasks: publicTasks(), settings };
+    return {
+      subjects: siteSync.subjects,
+      tasks: siteSync.tasks,
+      settings: { ...settings, visual: siteSync.visual, widgetPosition: settings.widgetPosition || siteSync.visual?.center || null }
+    };
+  }
+
+  function siteSyncStatus() {
+    return { savedAt: siteSync.savedAt || 0, taskCount: siteSync.tasks.length, subjectCount: siteSync.subjects.length };
+  }
+
+  function broadcastSiteSyncStatus() {
+    if (panel && !panel.isDestroyed() && !panel.webContents.isLoading()) panel.webContents.send("qg:site:sync-status", siteSyncStatus());
+  }
+
+  async function applySiteSync(value, stamp = 0) {
+    const cleaned = cleanSiteSync(value);
+    siteSync = cleaned;
+    latestDownloadStamp = Math.max(latestDownloadStamp, stamp);
+    await atomicWrite(siteSyncPath, JSON.stringify(siteSync, null, 2));
+    sendAmbient("snapshot", ambientSnapshot());
+    broadcastSiteSyncStatus();
+  }
+
+  async function pollSiteSync() {
+    try {
+      const folder = app.getPath("downloads");
+      const names = await fs.readdir(folder);
+      const candidates = names.filter((name) => /^CockpitTakeover-widget(?: \(\d+\))?\.json$/i.test(name));
+      let newest = null;
+      for (const name of candidates) {
+        const file = path.join(folder, name);
+        const stat = await fs.stat(file).catch(() => null);
+        if (!stat?.isFile() || stat.size > 1_000_000 || stat.mtimeMs <= latestDownloadStamp) continue;
+        if (!newest || stat.mtimeMs > newest.stamp) newest = { file, stamp: stat.mtimeMs };
+      }
+      if (!newest) return;
+      const parsed = JSON.parse(await fs.readFile(newest.file, "utf8"));
+      await applySiteSync(parsed, newest.stamp);
+      showShellNotice("Les rappels et réglages de Cockpit Takeover sont synchronisés avec le widget.");
+    } catch (error) {
+      if (error && error.code !== "ENOENT") console.error("Site sync scan failed:", error.message);
+    }
+  }
+
+  function startSiteSyncWatcher() {
+    pollSiteSync().catch((error) => console.error("Initial site sync scan failed:", error.message));
+    downloadsPoll = setInterval(() => pollSiteSync(), 1800);
+    downloadsPoll.unref?.();
   }
 
   function setAmbientStatus(status, message) {
@@ -171,6 +275,11 @@ if (process.argv.includes("--qg-ambient-host")) {
     child.on("message", (message) => {
       if (!message || typeof message !== "object") return;
       if (message.type === "status" && message.payload) setAmbientStatus(message.payload.status, message.payload.message);
+      if (message.type === "widget-position" && message.payload && Number.isFinite(message.payload.x) && Number.isFinite(message.payload.y)) {
+        settings = cleanSettings({ ...settings, widgetPosition: message.payload });
+        queueSettingsWrite().catch((error) => console.error("Widget position save failed:", error.message));
+        syncViews();
+      }
       if (message.type === "shell-unavailable" || message.type === "attach-error" || message.type === "shell-error") {
         setAmbientStatus("unavailable", message.message || "La couche Windows reste masquée pour protéger vos icônes.");
         showShellNotice(message.message || "La couche de fond Windows reste masquée pour protéger vos icônes.");
@@ -251,6 +360,7 @@ if (process.argv.includes("--qg-ambient-host")) {
       if (!target || target.isDestroyed()) return;
       target.webContents.send("qg:tasks:snapshot", { tasks: publicTasks(), summary: taskSummary(), blocked: tasksRecoveryNeeded });
       target.webContents.send("qg:ambient:status", ambientStatus);
+      target.webContents.send("qg:site:sync-status", siteSyncStatus());
       if (showPreferences) target.webContents.send("qg:settings:open");
     };
     if (target.webContents.isLoading()) target.webContents.once("did-finish-load", sendPanelState);
@@ -325,7 +435,14 @@ if (process.argv.includes("--qg-ambient-host")) {
     });
     ipcMain.handle("qg:settings:read", () => settings);
     ipcMain.handle("qg:ambient:status", () => ambientStatus);
+    ipcMain.handle("qg:site:sync-status", () => siteSyncStatus());
     ipcMain.handle("qg:ambient:restart", () => ({ ok: restartAmbientHost(), enabled: settings.fieldEnabled }));
+    ipcMain.handle("qg:settings:center-reset", async () => {
+      settings = cleanSettings({ ...settings, widgetPosition: siteSync.visual?.center || { x: 0.5, y: 0.53 } });
+      await queueSettingsWrite();
+      syncViews();
+      return settings.widgetPosition;
+    });
     ipcMain.handle("qg:settings:save", async (_event, next) => {
       const previous = settings;
       settings = cleanSettings({ ...settings, ...next });
@@ -336,7 +453,7 @@ if (process.argv.includes("--qg-ambient-host")) {
       if (settings.fieldEnabled) startAmbientHost(); else stopAmbientHost();
       return settings;
     });
-    ipcMain.handle("qg:site:open", () => shell.openExternal("https://ceomelyxja.github.io/DumbFuckCockpit/"));
+    ipcMain.handle("qg:site:open", () => shell.openExternal("https://ceomelyxja.github.io/CockpitTakeover/"));
     ipcMain.handle("qg:panel:close", () => { if (panel && !panel.isDestroyed()) panel.hide(); });
   }
 
@@ -347,7 +464,7 @@ if (process.argv.includes("--qg-ambient-host")) {
       { label: settings.fieldEnabled ? "Masquer le widget transparent" : "Afficher le widget transparent", click: toggleAmbientField },
       { label: "Recréer le widget du bureau", enabled: settings.fieldEnabled, click: requestAmbientRebuild },
       { type: "separator" },
-      { label: "Ouvrir le cockpit web", click: () => shell.openExternal("https://ceomelyxja.github.io/DumbFuckCockpit/") },
+      { label: "Ouvrir le cockpit web", click: () => shell.openExternal("https://ceomelyxja.github.io/CockpitTakeover/") },
       { type: "separator" },
       { label: "Quitter DumbFuckCockpit Widget", click: () => { quitting = true; app.quit(); } }
     ]);
@@ -380,6 +497,7 @@ if (process.argv.includes("--qg-ambient-host")) {
     const storeRoot = path.join(app.getPath("userData"), "qg");
     tasksPath = path.join(storeRoot, "tasks.json");
     settingsPath = path.join(storeRoot, "settings.json");
+    siteSyncPath = path.join(storeRoot, "cockpit-takeover-sync.json");
     try {
       const raw = await readJson(tasksPath, { tasks: [] });
       if (!raw || !Array.isArray(raw.tasks)) throw new Error("Le format local de la liste n’est pas reconnu.");
@@ -399,9 +517,14 @@ if (process.argv.includes("--qg-ambient-host")) {
     }
     try { settings = cleanSettings(await readJson(settingsPath, settings)); }
     catch (error) { showShellNotice(`Les préférences n’ont pas pu être lues : ${error.message}`); }
+    try {
+      const savedSync = await readJson(siteSyncPath, null);
+      if (savedSync) siteSync = cleanSiteSync(savedSync);
+    } catch (error) { showShellNotice(`La dernière synchronisation du site n’a pas pu être lue : ${error.message}`); }
     app.setLoginItemSettings({ openAtLogin: settings.startWithWindows });
     await configureIpc();
     createTray();
+    startSiteSyncWatcher();
     if (settings.fieldEnabled) startAmbientHost(); else setAmbientStatus("hidden", "Widget transparent désactivé dans les préférences.");
     if (!globalShortcut.register("Control+Alt+Space", openPanel)) showShellNotice("Le raccourci Ctrl+Alt+Espace est déjà utilisé par une autre application.");
     globalShortcut.register("Control+Alt+Shift+Space", requestAmbientRebuild);
@@ -430,4 +553,3 @@ if (process.argv.includes("--qg-ambient-host")) {
   });
   }
 }
-

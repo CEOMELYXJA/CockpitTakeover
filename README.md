@@ -1,33 +1,28 @@
-# DumbFuckCockpit — cockpit de vie
+# Cockpit Takeover
 
-Cockpit spatial animé, servi comme site statique par GitHub Pages.
+Le site [Cockpit Takeover](https://ceomelyxja.github.io/CockpitTakeover/) transforme vos rappels en planètes orbitant autour d’un centre. Le visuel reste sobre, sans chiffres ni noms sur les planètes.
 
-## Quelle version ouvrir ?
+## Le site et le widget
 
-- **Le site web** est la version complète et interactive. Utilisez-le pour ouvrir les menus, gérer vos tâches et voir les mises à jour du site.
-- **Le widget Windows** affiche le visuel animé sur le bureau, derrière les icônes. Il laisse passer les clics; les menus et les tâches du site ne sont pas utilisables dans cette couche.
-- Pour voir le widget, lancez le widget et fermez la fenêtre du site. Vous n’avez pas besoin d’ouvrir les deux en même temps.
-- Les deux utilisent les visuels du même projet; les tâches sauvegardées dans le site ne sont pas copiées dans le widget.
+- **Le site** sert à écrire et classer vos rappels, choisir ce que chaque sujet signifie et régler les couleurs, tailles et mouvements.
+- **Le widget Windows** montre cette carte en transparence derrière les icônes. Il continue de bouger même lorsqu’une autre fenêtre est devant lui.
+- Dans le site, cliquez sur **Synchroniser le widget** après vos changements. Le navigateur télécharge un petit fichier dans **Téléchargements**; l’application Windows le lit automatiquement en quelques secondes. Les rappels restent locaux à votre ordinateur et ne sont pas envoyés sur GitHub.
+- Une fois synchronisé, vous pouvez fermer le site. Le widget conserve la dernière carte reçue même après sa fermeture.
 
-## Installer le widget Windows
+## La carte des rappels
 
-1. Ouvrez [les téléchargements Windows](https://github.com/CEOMELYXJA/DumbFuckCockpit/releases/latest) et enregistrez le fichier **DumbFuckCockpit-Widget-…-x64.exe** dans **Téléchargements**.
-2. Double-cliquez le fichier. Il s’installe automatiquement dans le dossier des applications Windows, crée **un seul raccourci** sur le Bureau et démarre le widget.
-3. Fermez la fenêtre du site web pour voir le visuel sur le bureau.
-4. Pour les réglages, double-cliquez de nouveau sur le raccourci du Bureau. Fermer les réglages laisse le widget actif.
+Chaque rappel a un titre concret, un détail, un sujet, une durée et un état. Un rappel démarré devient une planète; plus son délai s’écoule, plus son orbite rejoint le centre. La pulsation s’accentue doucement à l’approche de l’échéance. Une fois le temps écoulé, la planète rejoint le centre puis disparaît du widget, mais le rappel reste ouvert dans le site. Le clic gauche sur le centre dans le site affiche l’état et les détails des rappels.
 
-Le fichier téléchargé est l’installateur. Il ne faut pas le décompresser ni choisir un dossier sur le Bureau. L’installation ne crée aucun dossier sur le Bureau; elle y place seulement le raccourci du widget.
+Les éléments importés d’un fichier texte restent **À classer** si leur sujet n’est pas clair; rien n’est attribué au hasard. L’aperçu vous permet de confirmer l’importation avant d’ajouter quoi que ce soit.
 
-## Fonctions du site web
+## Personnaliser l’apparence
 
-- **Carte :** zoom, déplacement et menus des univers.
-- **Tâches :** ajouter, classer, prioriser, estimer et suivre des tâches; importer des fichiers `.txt` et `.md`; exporter une sauvegarde `.json`.
-- **Classement :** les catégories reconnues sont proposées à l’import; les sections inconnues restent « À trier ».
-- **Conservation :** les tâches du site sont enregistrées dans le navigateur et ne se synchronisent pas entre appareils. Exportez une sauvegarde JSON pour les déplacer.
+Dans **Sujets**, définissez le sens de chaque couleur, sa taille, sa description et son délai proposé. Dans **Apparence**, choisissez le nombre maximal de rappels en orbite, l’échelle des planètes, leur vitesse, la visibilité des orbites et la quantité de petites étoiles blanches. Le site garde vos choix dans le navigateur.
 
-## Mises à jour
+Sur le bureau, seule la planète centrale est interactive : maintenez le clic droit dessus et déplacez-la. Toute la carte suit avec fluidité. Le widget couvre chaque écran en transparence pour que le centre puisse aller partout; les icônes et les autres fenêtres restent devant lui. Les planètes autour ne captent pas les clics.
 
-Le widget Windows prend une copie du visuel du site lors de sa publication. Les changements du site ne mettent pas à jour une installation Windows déjà faite; téléchargez la nouvelle version Windows pour actualiser le widget.
+## Widget Windows
 
-Le site fonctionne sans compilation. Il utilise GitHub Pages et un service worker pour son fonctionnement hors ligne.
+Téléchargez l’application depuis les [versions Windows](https://github.com/CEOMELYXJA/CockpitTakeover/releases/latest). Elle installe un seul raccourci **DumbFuckCockpit Widget** sur le Bureau et ne crée pas de dossier **Trinity**. Ses réglages d’opacité, de mouvement, d’affichage et de démarrage avec Windows restent enregistrés après fermeture.
 
+Le widget est fourni sous forme de paquet Windows généré par GitHub Actions. Une nouvelle version de l’application est publiée à chaque mise à jour du paquet; les mises à jour visuelles du site sont synchronisées avec le widget par le bouton du site.

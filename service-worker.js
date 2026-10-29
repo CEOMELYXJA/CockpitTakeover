@@ -1,5 +1,5 @@
-const CACHE_NAME = "qg-cockpit-shell-v4";
-const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./tasks.js", "./tasks.css", "./icon.svg"];
+const CACHE_NAME = "cockpit-takeover-shell-v5";
+const SHELL = ["./", "./index.html", "./cockpit.js", "./cockpit.css", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", function (event) {
   event.waitUntil(
@@ -14,7 +14,7 @@ self.addEventListener("activate", function (event) {
     caches.keys()
       .then(function (keys) {
         return Promise.all(keys.filter(function (key) {
-          return key.indexOf("qg-cockpit-shell-") === 0 && key !== CACHE_NAME;
+          return /^(qg-cockpit-shell-|cockpit-takeover-shell-)/.test(key) && key !== CACHE_NAME;
         }).map(function (key) { return caches.delete(key); }));
       })
       .then(function () { return self.clients.claim(); })

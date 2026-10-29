@@ -11,10 +11,17 @@ contextBridge.exposeInMainWorld("qgDesktop", Object.freeze({
   saveSettings: (settings) => ipcRenderer.invoke("qg:settings:save", settings),
   getAmbientStatus: () => ipcRenderer.invoke("qg:ambient:status"),
   restartAmbient: () => ipcRenderer.invoke("qg:ambient:restart"),
+  resetWidgetPosition: () => ipcRenderer.invoke("qg:settings:center-reset"),
+  getSiteSyncStatus: () => ipcRenderer.invoke("qg:site:sync-status"),
   onAmbientStatus: (handler) => {
     const listener = (_event, status) => handler(status);
     ipcRenderer.on("qg:ambient:status", listener);
     return () => ipcRenderer.removeListener("qg:ambient:status", listener);
+  },
+  onSiteSyncStatus: (handler) => {
+    const listener = (_event, status) => handler(status);
+    ipcRenderer.on("qg:site:sync-status", listener);
+    return () => ipcRenderer.removeListener("qg:site:sync-status", listener);
   },
   onSettingsOpen: (handler) => {
     const listener = () => handler();
@@ -39,4 +46,3 @@ contextBridge.exposeInMainWorld("qgDesktop", Object.freeze({
     return () => ipcRenderer.removeListener("qg:tasks:snapshot", listener);
   }
 }));
-

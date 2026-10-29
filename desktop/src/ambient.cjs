@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, screen } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -14,7 +14,6 @@ let nativeHost = null;
 let snapshot = { categories: [], tasks: [], settings: { side: "right", opacity: 0.82, motion: "measured" } };
 let scenes = [];
 let receivedSnapshot = false;
-let lastDesktopActivity = null;
 let lastUnavailableNotice = 0;
 let refreshTimer = null;
 let shuttingDown = false;
@@ -51,14 +50,7 @@ function nativeHandleBuffer(handle) {
 }
 
 function widgetBounds(display) {
-  const source = display.bounds;
-  const width = Math.max(1, Math.min(source.width, Math.round(source.width * 0.68)));
-  return {
-    x: snapshot.settings?.side === "left" ? source.x : source.x + source.width - width,
-    y: source.y,
-    width,
-    height: source.height
-  };
+  return { ...display.bounds };
 }
 
 function chooseHost(hosts, display) {
@@ -77,14 +69,8 @@ function chooseHost(hosts, display) {
 }
 
 function broadcastState() {
-  const message = { categories: snapshot.categories, tasks: snapshot.tasks, settings: snapshot.settings };
+  const message = { subjects: snapshot.subjects, categories: snapshot.categories, tasks: snapshot.tasks, settings: snapshot.settings };
   for (const window of scenes) if (!window.isDestroyed() && !window.webContents.isLoading()) window.webContents.send("qg:scene-state", message);
-}
-
-function broadcastActivity(active) {
-  if (active === lastDesktopActivity) return;
-  lastDesktopActivity = active;
-  for (const window of scenes) if (!window.isDestroyed() && !window.webContents.isLoading()) window.webContents.send("qg:ambient-active", active);
 }
 
 function notifyUnavailable(message) {
@@ -108,7 +94,7 @@ function createScene(display, desktopHost) {
       nodeIntegration: false, sandbox: true, backgroundThrottling: false
     }
   });
-  window.setIgnoreMouseEvents(true);
+  window.setIgnoreMouseEvents(true, { forward: true });
   window.setFocusable(false);
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
@@ -131,8 +117,7 @@ function createScene(display, desktopHost) {
       );
       window.__qgAttached = true;
       window.showInactive();
-      window.webContents.send("qg:scene-state", { categories: snapshot.categories, tasks: snapshot.tasks, settings: snapshot.settings });
-      window.webContents.send("qg:ambient-active", false);
+      window.webContents.send("qg:scene-state", { subjects: snapshot.subjects, categories: snapshot.categories, tasks: snapshot.tasks, settings: snapshot.settings });
       reportStatus("visible", "Widget transparent actif derrière les icônes.");
     } catch (error) {
       reportStatus("unavailable", "Windows n’a pas pu afficher le widget derrière les icônes.");
@@ -201,9 +186,21 @@ function checkShell() {
     return !parent || (current.size > 0 && !current.has(parent));
   });
   if (missing || (!scenes.length && current.size)) rebuildScenes();
-  try { broadcastActivity(Boolean(nativeHost && nativeHost.isDesktopForeground())); }
-  catch (_) { broadcastActivity(false); }
 }
+
+ipcMain.on("qg:scene-input", (event, enabled) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window || window.isDestroyed()) return;
+  window.setIgnoreMouseEvents(!Boolean(enabled), { forward: true });
+});
+
+ipcMain.on("qg:scene-position", (_event, position) => {
+  if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
+  sendToParent({ type: "widget-position", payload: {
+    x: Math.max(0.07, Math.min(0.93, position.x)),
+    y: Math.max(0.09, Math.min(0.91, position.y))
+  } });
+});
 
 process.on("message", (message) => {
   if (!message || typeof message !== "object") return;
@@ -249,4 +246,3 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => { if (shuttingDown) app.quit(); });
-

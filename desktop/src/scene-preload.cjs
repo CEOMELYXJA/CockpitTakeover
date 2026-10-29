@@ -12,5 +12,10 @@ contextBridge.exposeInMainWorld("qgScene", Object.freeze({
     const listener = (_event, snapshot) => handler(snapshot);
     ipcRenderer.on("qg:scene-state", listener);
     return () => ipcRenderer.removeListener("qg:scene-state", listener);
+  },
+  setInputEnabled: (enabled) => ipcRenderer.send("qg:scene-input", Boolean(enabled)),
+  saveWidgetPosition: (position) => {
+    if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
+    ipcRenderer.send("qg:scene-position", { x: position.x, y: position.y });
   }
 }));

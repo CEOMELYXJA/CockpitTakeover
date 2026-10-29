@@ -10,6 +10,8 @@ on:
       - 'desktop/**'
       - '.github/workflows/desktop-widget.yml'
       - 'index.html'
+      - 'cockpit.js'
+      - 'cockpit.css'
       - 'tasks.js'
       - 'tasks.css'
       - 'manifest.webmanifest'
@@ -80,4 +82,3 @@ jobs:
             & gh release create $tag $installer.FullName --repo $env:GITHUB_REPOSITORY --title "DumbFuckCockpit Widget $version" --notes-file desktop/RELEASE_NOTES.md --latest
           }
           if ($LASTEXITCODE -ne 0) { throw "Publication de la version Windows échouée." }
-

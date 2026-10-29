@@ -3,7 +3,7 @@
 (() => {
   const byId = (id) => document.getElementById(id);
   const state = {
-    settings: { side: "right", opacity: 0.82, motion: "measured", fieldEnabled: true, startWithWindows: false },
+    settings: { opacity: 0.82, motion: "measured", fieldEnabled: true, startWithWindows: false },
     toastTimer: 0
   };
 
@@ -16,11 +16,21 @@
   }
 
   function renderSettings() {
-    byId("settingSide").value = state.settings.side || "right";
     byId("settingOpacity").value = String(Math.round((state.settings.opacity || 0.82) * 100));
     byId("settingMotion").value = state.settings.motion || "measured";
     byId("settingFieldEnabled").checked = state.settings.fieldEnabled !== false;
     byId("settingStartup").checked = Boolean(state.settings.startWithWindows);
+  }
+
+  function renderSiteSync(snapshot) {
+    const status = byId("siteSyncStatus");
+    if (!status) return;
+    if (!snapshot || !snapshot.savedAt) {
+      status.textContent = "Aucun rappel synchronisé pour le moment.";
+      return;
+    }
+    const date = new Intl.DateTimeFormat("fr-CA", { dateStyle: "short", timeStyle: "short" }).format(new Date(snapshot.savedAt));
+    status.textContent = `Synchronisé le ${date} · ${snapshot.taskCount} rappel${snapshot.taskCount === 1 ? "" : "s"}`;
   }
 
   function renderAmbientStatus(snapshot) {
@@ -45,7 +55,6 @@
   async function persistSettings() {
     try {
       state.settings = await window.qgDesktop.saveSettings({
-        side: byId("settingSide").value,
         opacity: Number(byId("settingOpacity").value) / 100,
         motion: byId("settingMotion").value,
         fieldEnabled: byId("settingFieldEnabled").checked,
@@ -67,10 +76,15 @@
       toast(result.enabled ? "Le widget redémarre sur le bureau…" : "Activez d’abord « Afficher sur le bureau ». ");
     } catch (error) { toast(`Le widget n’a pas pu redémarrer : ${error.message}`); }
   });
-  ["settingSide", "settingOpacity", "settingMotion", "settingFieldEnabled", "settingStartup"]
+  byId("centerReset").addEventListener("click", async () => {
+    try { await window.qgDesktop.resetWidgetPosition(); toast("La planète principale est recentrée."); }
+    catch (error) { toast(`Position impossible à réinitialiser : ${error.message}`); }
+  });
+  ["settingOpacity", "settingMotion", "settingFieldEnabled", "settingStartup"]
     .forEach((id) => byId(id).addEventListener("change", persistSettings));
   window.qgDesktop.onAmbientStatus(renderAmbientStatus);
+  window.qgDesktop.onSiteSyncStatus(renderSiteSync);
   window.qgDesktop.getAmbientStatus().then(renderAmbientStatus);
+  window.qgDesktop.getSiteSyncStatus().then(renderSiteSync);
   window.qgDesktop.getSettings().then((settings) => { state.settings = { ...state.settings, ...settings }; renderSettings(); });
 })();
-
