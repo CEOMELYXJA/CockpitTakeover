@@ -6,7 +6,10 @@
 #include <cmath>
 #include <iterator>
 #include <cstdint>
+#include <deque>
+#include <mutex>
 #include <napi.h>
+#include <commctrl.h>
 
 namespace {
 constexpr UINT kProgmanCreateWorker = 0x052C;
@@ -20,6 +23,119 @@ struct DesktopHost {
 };
 
 std::vector<DesktopHost> g_hosts;
+
+struct CoreDragArea {
+  HWND child = nullptr;
+  HWND iconView = nullptr;
+  POINT center{};
+  double radius = 0;
+};
+
+struct CoreDragEvent {
+  HWND child = nullptr;
+  POINT point{};
+  int phase = 0;  // 0: start, 1: move, 2: end
+};
+
+std::mutex g_dragMutex;
+std::vector<CoreDragArea> g_dragAreas;
+std::deque<CoreDragEvent> g_dragEvents;
+HHOOK g_mouseHook = nullptr;
+HWND g_draggingChild = nullptr;
+
+bool IsWindowClass(HWND hwnd, const wchar_t* expected);
+
+bool HasDesktopIconAtPoint(HWND iconView, POINT screenPoint) {
+  if (!IsWindow(iconView)) return true;
+  const HWND listView = FindWindowExW(iconView, nullptr, L"SysListView32", nullptr);
+  if (!IsWindow(listView)) return true;
+
+  DWORD processId = 0;
+  GetWindowThreadProcessId(listView, &processId);
+  if (!processId) return true;
+  HANDLE process = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE, FALSE, processId);
+  if (!process) return true;
+
+  LVHITTESTINFO hit{};
+  hit.pt = screenPoint;
+  if (!ScreenToClient(listView, &hit.pt)) { CloseHandle(process); return true; }
+  auto* remoteHit = static_cast<LVHITTESTINFO*>(VirtualAllocEx(process, nullptr, sizeof(hit), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+  if (!remoteHit) { CloseHandle(process); return true; }
+
+  SIZE_T written = 0;
+  DWORD_PTR result = 0;
+  const bool wrote = WriteProcessMemory(process, remoteHit, &hit, sizeof(hit), &written) && written == sizeof(hit);
+  const bool messaged = wrote && SendMessageTimeoutW(listView, LVM_HITTEST, 0, reinterpret_cast<LPARAM>(remoteHit), SMTO_ABORTIFHUNG, 25, &result) != 0;
+  SIZE_T read = 0;
+  const bool readBack = messaged && ReadProcessMemory(process, remoteHit, &hit, sizeof(hit), &read) && read == sizeof(hit);
+  VirtualFreeEx(process, remoteHit, 0, MEM_RELEASE);
+  CloseHandle(process);
+  if (!readBack) return true;  // Fail closed so an icon remains clickable.
+  return hit.iItem >= 0 && (hit.flags & LVHT_ONITEM) != 0;
+}
+
+bool IsDesktopForegroundWindow() {
+  HWND foreground = GetForegroundWindow();
+  if (!foreground) return false;
+  const HWND root = GetAncestor(foreground, GA_ROOT);
+  return IsWindowClass(root, L"Progman") || IsWindowClass(root, L"WorkerW");
+}
+
+LRESULT CALLBACK CoreDragMouseHook(int code, WPARAM message, LPARAM data) {
+  if (code < 0) return CallNextHookEx(g_mouseHook, code, message, data);
+  const auto* mouse = reinterpret_cast<const MSLLHOOKSTRUCT*>(data);
+  if (!mouse) return CallNextHookEx(g_mouseHook, code, message, data);
+
+  if (message == WM_RBUTTONDOWN) {
+    if (!IsDesktopForegroundWindow()) return CallNextHookEx(g_mouseHook, code, message, data);
+    std::lock_guard<std::mutex> lock(g_dragMutex);
+    for (const auto& area : g_dragAreas) {
+      const double dx = static_cast<double>(mouse->pt.x - area.center.x);
+      const double dy = static_cast<double>(mouse->pt.y - area.center.y);
+      if (dx * dx + dy * dy > area.radius * area.radius) continue;
+      if (HasDesktopIconAtPoint(area.iconView, mouse->pt)) break;
+      g_draggingChild = area.child;
+      g_dragEvents.push_back({ area.child, mouse->pt, 0 });
+      return 1;
+    }
+  } else if (message == WM_MOUSEMOVE) {
+    std::lock_guard<std::mutex> lock(g_dragMutex);
+    if (g_draggingChild) {
+      if (!g_dragEvents.empty() && g_dragEvents.back().child == g_draggingChild && g_dragEvents.back().phase == 1) {
+        g_dragEvents.back().point = mouse->pt;
+      } else {
+        g_dragEvents.push_back({ g_draggingChild, mouse->pt, 1 });
+      }
+      return 1;
+    }
+  } else if (message == WM_RBUTTONUP) {
+    std::lock_guard<std::mutex> lock(g_dragMutex);
+    if (g_draggingChild) {
+      g_dragEvents.push_back({ g_draggingChild, mouse->pt, 2 });
+      g_draggingChild = nullptr;
+      return 1;
+    }
+  }
+  return CallNextHookEx(g_mouseHook, code, message, data);
+}
+
+bool InstallCoreDragHook() {
+  if (g_mouseHook) return true;
+  HMODULE module = nullptr;
+  const auto address = reinterpret_cast<LPCWSTR>(reinterpret_cast<ULONG_PTR>(&CoreDragMouseHook));
+  if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, address, &module)) return false;
+  g_mouseHook = SetWindowsHookExW(WH_MOUSE_LL, CoreDragMouseHook, module, 0);
+  return g_mouseHook != nullptr;
+}
+
+void RemoveCoreDragHook() {
+  std::lock_guard<std::mutex> lock(g_dragMutex);
+  if (g_mouseHook) UnhookWindowsHookEx(g_mouseHook);
+  g_mouseHook = nullptr;
+  g_dragAreas.clear();
+  g_dragEvents.clear();
+  g_draggingChild = nullptr;
+}
 
 bool IsWindowClass(HWND hwnd, const wchar_t* expected) {
   wchar_t name[128]{};
@@ -86,6 +202,7 @@ Napi::Value EnumerateDesktopHosts(const Napi::CallbackInfo& info) {
     bounds.Set("y", Napi::Number::New(env, source.bounds.top));
     bounds.Set("width", Napi::Number::New(env, source.bounds.right - source.bounds.left));
     bounds.Set("height", Napi::Number::New(env, source.bounds.bottom - source.bounds.top));
+    entry.Set("iconView", Napi::BigInt::New(env, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(source.iconView))));
     result.Set(i, entry);
   }
   return result;
@@ -162,10 +279,63 @@ Napi::Value MoveDesktopWindow(const Napi::CallbackInfo& info) {
 }
 
 Napi::Value IsDesktopForeground(const Napi::CallbackInfo& info) {
-  HWND foreground = GetForegroundWindow();
-  if (!foreground) return Napi::Boolean::New(info.Env(), false);
-  const HWND root = GetAncestor(foreground, GA_ROOT);
-  return Napi::Boolean::New(info.Env(), IsWindowClass(root, L"Progman") || IsWindowClass(root, L"WorkerW"));
+  return Napi::Boolean::New(info.Env(), IsDesktopForegroundWindow());
+}
+
+Napi::Value SetCoreDragArea(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 3 || !info[2].IsObject()) throw Napi::TypeError::New(env, "La zone de déplacement du noyau est manquante.");
+  const HWND child = ReadHandle(info[0]);
+  const HWND iconView = ReadHandle(info[1]);
+  Napi::Object value = info[2].As<Napi::Object>();
+  const double x = value.Get("x").ToNumber().DoubleValue();
+  const double y = value.Get("y").ToNumber().DoubleValue();
+  const double radius = value.Get("radius").ToNumber().DoubleValue();
+  if (!IsWindow(child) || !IsWindow(iconView) || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(radius) || radius < 1 || radius > 1000) {
+    throw Napi::RangeError::New(env, "La zone de déplacement du noyau est invalide.");
+  }
+
+  std::lock_guard<std::mutex> lock(g_dragMutex);
+  const auto existing = std::find_if(g_dragAreas.begin(), g_dragAreas.end(), [child](const CoreDragArea& area) { return area.child == child; });
+  CoreDragArea area{ child, iconView, { static_cast<LONG>(std::lround(x)), static_cast<LONG>(std::lround(y)) }, radius };
+  if (existing == g_dragAreas.end()) g_dragAreas.push_back(area);
+  else *existing = area;
+  if (!InstallCoreDragHook()) throw Napi::Error::New(env, "Windows n’a pas pu activer le déplacement du noyau.");
+  return Napi::Boolean::New(env, true);
+}
+
+Napi::Value RemoveCoreDragArea(const Napi::CallbackInfo& info) {
+  if (info.Length() < 1) throw Napi::TypeError::New(info.Env(), "Fenêtre du widget manquante.");
+  const HWND child = ReadHandle(info[0]);
+  std::lock_guard<std::mutex> lock(g_dragMutex);
+  g_dragAreas.erase(std::remove_if(g_dragAreas.begin(), g_dragAreas.end(), [child](const CoreDragArea& area) { return area.child == child; }), g_dragAreas.end());
+  if (g_draggingChild == child) g_draggingChild = nullptr;
+  if (g_dragAreas.empty() && g_mouseHook) {
+    UnhookWindowsHookEx(g_mouseHook);
+    g_mouseHook = nullptr;
+    g_dragEvents.clear();
+  }
+  return Napi::Boolean::New(info.Env(), true);
+}
+
+Napi::Value PollCoreDrag(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  std::deque<CoreDragEvent> events;
+  {
+    std::lock_guard<std::mutex> lock(g_dragMutex);
+    events.swap(g_dragEvents);
+  }
+  Napi::Array result = Napi::Array::New(env, events.size());
+  uint32_t index = 0;
+  for (const auto& event : events) {
+    Napi::Object item = Napi::Object::New(env);
+    item.Set("handle", Napi::BigInt::New(env, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(event.child))));
+    item.Set("x", Napi::Number::New(env, event.point.x));
+    item.Set("y", Napi::Number::New(env, event.point.y));
+    item.Set("phase", Napi::String::New(env, event.phase == 0 ? "start" : event.phase == 2 ? "end" : "move"));
+    result.Set(index++, item);
+  }
+  return result;
 }
 
 Napi::Object Initialize(Napi::Env env, Napi::Object exports) {
@@ -174,6 +344,10 @@ Napi::Object Initialize(Napi::Env env, Napi::Object exports) {
   exports.Set("moveDesktopWindow", Napi::Function::New(env, MoveDesktopWindow));
   exports.Set("getParentHandle", Napi::Function::New(env, GetParentHandle));
   exports.Set("isDesktopForeground", Napi::Function::New(env, IsDesktopForeground));
+  exports.Set("setCoreDragArea", Napi::Function::New(env, SetCoreDragArea));
+  exports.Set("removeCoreDragArea", Napi::Function::New(env, RemoveCoreDragArea));
+  exports.Set("pollCoreDrag", Napi::Function::New(env, PollCoreDrag));
+  exports.Set("removeCoreDragHook", Napi::Function::New(env, [](const Napi::CallbackInfo& info) -> Napi::Value { RemoveCoreDragHook(); return Napi::Boolean::New(info.Env(), true); }));
   return exports;
 }
 }  // namespace

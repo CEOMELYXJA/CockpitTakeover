@@ -16,6 +16,7 @@ let scenes = [];
 let receivedSnapshot = false;
 let lastUnavailableNotice = 0;
 let refreshTimer = null;
+let dragPollTimer = null;
 let shuttingDown = false;
 let lastShellScan = 0;
 let cachedHosts = [];
@@ -94,6 +95,9 @@ function createScene(display, desktopHost) {
       nodeIntegration: false, sandbox: true, backgroundThrottling: false
     }
   });
+  const nativeWindowHandle = window.getNativeWindowHandle();
+  window.__qgNativeHandle = nativeWindowHandle;
+  window.__qgHandle = nativeWindowHandle.readBigUInt64LE(0).toString();
   window.setIgnoreMouseEvents(true, { forward: true });
   window.setFocusable(false);
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -110,8 +114,9 @@ function createScene(display, desktopHost) {
       const currentDisplay = screen.getAllDisplays().find((item) => item.id === display.id) || display;
       const currentBounds = widgetBounds(currentDisplay);
       window.__qgDisplayId = display.id;
+      window.__qgIconView = desktopHost.iconView;
       nativeHost.attachToDesktop(
-        window.getNativeWindowHandle(),
+        nativeWindowHandle,
         nativeHandleBuffer(desktopHost.handle),
         monitorBounds({ ...currentDisplay, bounds: currentBounds })
       );
@@ -125,7 +130,10 @@ function createScene(display, desktopHost) {
       window.destroy();
     }
   });
-  window.on("closed", () => { scenes = scenes.filter((item) => item !== window); });
+  window.on("closed", () => {
+    try { nativeHost?.removeCoreDragArea?.(nativeWindowHandle); } catch (_) {}
+    scenes = scenes.filter((item) => item !== window);
+  });
   scenes.push(window);
 }
 
@@ -191,7 +199,28 @@ function checkShell() {
 ipcMain.on("qg:scene-input", (event, enabled) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   if (!window || window.isDestroyed()) return;
-  window.setIgnoreMouseEvents(!Boolean(enabled), { forward: true });
+  // Keep the scene click-through at all times; toggling this off removes the
+  // native transparent-child style needed by Windows' desktop composition.
+  window.setIgnoreMouseEvents(true, { forward: true });
+});
+
+ipcMain.on("qg:scene-hit-area", (event, area) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window || window.isDestroyed() || !window.__qgAttached || !area || !nativeHost?.setCoreDragArea) return;
+  if (![area.x, area.y, area.radius].every(Number.isFinite)) return;
+  const display = screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
+  if (!display) return;
+  const scale = display.scaleFactor || 1;
+  const bounds = display.bounds;
+  try {
+    nativeHost.setCoreDragArea(window.__qgNativeHandle, nativeHandleBuffer(window.__qgIconView), {
+      x: (bounds.x + area.x) * scale,
+      y: (bounds.y + area.y) * scale,
+      radius: area.radius * scale
+    });
+  } catch (error) {
+    sendToParent({ type: "shell-error", message: error.message });
+  }
 });
 
 ipcMain.on("qg:scene-position", (_event, position) => {
@@ -221,6 +250,27 @@ ipcMain.on("qg:scene-pinball", (event) => {
   if (window && scenes.includes(window)) sendToParent({ type: "pinball" });
 });
 
+function pollCoreDrag() {
+  if (!nativeHost?.pollCoreDrag) return;
+  let events;
+  try { events = nativeHost.pollCoreDrag(); }
+  catch (error) { sendToParent({ type: "shell-error", message: error.message }); return; }
+  for (const drag of events || []) {
+    const window = scenes.find((scene) => scene.__qgHandle === String(drag.handle));
+    if (!window || window.isDestroyed() || window.webContents.isLoading()) continue;
+    const display = screen.getAllDisplays().find((item) => item.id === window.__qgDisplayId);
+    if (!display) continue;
+    const scale = display.scaleFactor || 1;
+    const x = (drag.x / scale - display.bounds.x) / display.bounds.width;
+    const y = (drag.y / scale - display.bounds.y) / display.bounds.height;
+    window.webContents.send("qg:scene-core-drag", {
+      phase: drag.phase,
+      x: Math.max(0.07, Math.min(0.93, x)),
+      y: Math.max(0.09, Math.min(0.91, y))
+    });
+  }
+}
+
 process.on("message", (message) => {
   if (!message || typeof message !== "object") return;
   if (message.type === "snapshot" && message.payload && typeof message.payload === "object") {
@@ -239,6 +289,8 @@ process.on("message", (message) => {
   } else if (message.type === "shutdown") {
     shuttingDown = true;
     if (refreshTimer) clearInterval(refreshTimer);
+    if (dragPollTimer) clearInterval(dragPollTimer);
+    try { nativeHost?.removeCoreDragHook?.(); } catch (_) {}
     for (const window of scenes) if (!window.isDestroyed()) window.destroy();
     app.quit();
   }
@@ -260,8 +312,16 @@ app.whenReady().then(() => {
   screen.on("display-removed", rebuildScenes);
   screen.on("display-metrics-changed", rebuildScenes);
   refreshTimer = setInterval(checkShell, 1400);
+  dragPollTimer = setInterval(pollCoreDrag, 16);
   checkShell();
   sendToParent({ type: "ready" });
 });
 
+app.on("before-quit", () => {
+  if (refreshTimer) clearInterval(refreshTimer);
+  if (dragPollTimer) clearInterval(dragPollTimer);
+  try { nativeHost?.removeCoreDragHook?.(); } catch (_) {}
+});
+
 app.on("window-all-closed", () => { if (shuttingDown) app.quit(); });
+

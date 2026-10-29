@@ -13,7 +13,16 @@ contextBridge.exposeInMainWorld("qgScene", Object.freeze({
     ipcRenderer.on("qg:scene-state", listener);
     return () => ipcRenderer.removeListener("qg:scene-state", listener);
   },
-  setInputEnabled: (enabled) => ipcRenderer.send("qg:scene-input", Boolean(enabled)),
+  setInputEnabled: () => ipcRenderer.send("qg:scene-input", true),
+  setCoreDragArea: (area) => {
+    if (!area || !Number.isFinite(area.x) || !Number.isFinite(area.y) || !Number.isFinite(area.radius)) return;
+    ipcRenderer.send("qg:scene-hit-area", { x: area.x, y: area.y, radius: area.radius });
+  },
+  onCoreDrag: (handler) => {
+    const listener = (_event, drag) => handler(drag);
+    ipcRenderer.on("qg:scene-core-drag", listener);
+    return () => ipcRenderer.removeListener("qg:scene-core-drag", listener);
+  },
   saveWidgetPosition: (position) => {
     if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
     ipcRenderer.send("qg:scene-position", { x: position.x, y: position.y });
@@ -33,3 +42,4 @@ contextBridge.exposeInMainWorld("qgScene", Object.freeze({
   },
   openPinball: () => ipcRenderer.send("qg:scene-pinball")
 }));
+
