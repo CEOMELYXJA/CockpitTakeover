@@ -15,3 +15,7 @@ Après vos changements, cliquez sur **Synchroniser le widget**. Si le widget est
 Sur le Bureau, maintenez le clic droit sur le noyau central et déplacez-le. La carte entière suit avec fluidité. Les autres planètes ne prennent pas les clics; les icônes restent au premier plan.
 
 Les options Windows d’opacité, de mouvement et de démarrage restent enregistrées après fermeture. Une mise à jour du widget s’installe en téléchargeant la nouvelle version; la carte déjà synchronisée est conservée.
+
+## Réutiliser la couche transparente
+
+Le moteur de fenêtre réutilisable est séparé du rendu Cockpit dans le code de l’application. Son module natif Windows est construit depuis `native`; les adaptations Cockpit restent dans `src/ambient.cjs`, `src/scene-preload.cjs` et les fichiers du widget orbital.

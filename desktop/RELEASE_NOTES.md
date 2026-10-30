@@ -3,6 +3,7 @@
 - Sépare davantage les couches orbitales et ajoute de petits repères de visée à plusieurs niveaux.
 - Ouvre les orbites des planètes et augmente fortement les variations de distance, d’orientation et de phase.
 - Densifie le champ d’étoiles lointain et les micro-constellations en arcs irréguliers animés; leur quantité reste réglable.
+- Rétablit la génération de l’installateur Windows à partir du module natif présent dans le dépôt.
 
 # Cockpit Takeover Widget 0.11.13
 

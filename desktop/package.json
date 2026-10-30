@@ -12,7 +12,7 @@
     "package": "node scripts/prepare-widget.cjs && npm run icons && electron-builder --publish never --win nsis"
   },
   "dependencies": {
-    "desktop-host": "file:./desktop-shell/native"
+    "desktop-host": "file:./native"
   },
   "devDependencies": {
     "electron": "45.1.0",
