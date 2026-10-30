@@ -1,3 +1,8 @@
+# Cockpit Takeover Widget 0.11.12
+
+- Corrige l’erreur d’affichage qui arrêtait le dessin du noyau et des planètes dès qu’un rappel était présent. Les données enregistrées restent intactes.
+- Réduit la limite des micro-étoiles et le coût de la texture du noyau pour garder une animation plus légère.
+
 # Cockpit Takeover Widget 0.11.11
 
 - Le clic droit sur une zone vide du bureau démarre le déplacement de la carte, même si le pointeur ne commence pas sur le noyau; les icônes gardent leurs menus Windows.
