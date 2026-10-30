@@ -44,21 +44,21 @@
     { id: "admin", name: "Administration", description: "", color: "#c6ff55", size: 1, durationMinutes: 20 },
     { id: "personal", name: "Personnel", description: "", color: "#ad7bff", size: 1, durationMinutes: 25 }
   ];
-  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, orbitSpread: 1.25, orbitRandomness: 0.62, stars: 30, microStarCount: 4200, microStarScale: 1.4, microStarSpeed: 1, showOrbits: true, center: { x: 0.5, y: 0.53 }, zoomPan: { x: 0, y: 0 }, viewYaw: 0, viewPitch: 0, zoom: 1, focusTaskId: null, coreColor: "#42dcff", coreCraters: "few" };
+  const DEFAULT_VISUAL = { planetCount: 8, planetScale: 1, speed: 0.72, orbitSpread: 1.65, orbitRandomness: 0.88, stars: 30, microStarCount: 6800, microStarScale: 1.4, microStarSpeed: 1, showOrbits: true, center: { x: 0.5, y: 0.53 }, zoomPan: { x: 0, y: 0 }, viewYaw: 0, viewPitch: 0, zoom: 1, focusTaskId: null, coreColor: "#42dcff", coreCraters: "few" };
   const DEFAULT_STATE = { version: 1, view: "tasks", taskFilter: "open", panelCollapsed: false, panelPosition: null, subjects: DEFAULT_SUBJECTS.map((item) => ({ ...item })), tasks: [], visual: structuredClone(DEFAULT_VISUAL), lastSync: 0 };
-  const SKY_SPHERE_STARS = Array.from({ length: 6500 }, () => {
+  const SKY_SPHERE_STARS = Array.from({ length: 15000 }, () => {
     const vertical = Math.random() * 2 - 1;
     const angle = Math.random() * TAU;
     const radial = Math.sqrt(1 - vertical * vertical);
     const color = Math.random();
     return {
       x: radial * Math.cos(angle), y: vertical, z: radial * Math.sin(angle),
-      size: Math.random() < 0.05 ? 1.8 : Math.random() * 0.9 + 0.5,
+      size: Math.random() < 0.035 ? 1.7 : Math.random() * 0.78 + 0.38,
       phase: Math.random() * TAU,
-      color: color < 0.2 ? 1 : color < 0.35 ? 2 : 0
+      color: color < 0.16 ? 1 : color < 0.28 ? 2 : color < 0.36 ? 3 : 0
     };
   });
-  const SKY_STAR_COLORS = ["#dce1e4", "#bbc5c9", "#d0c0a3"];
+  const SKY_STAR_COLORS = ["#e2e8ff", "#c4d5e8", "#e0d0b5", "#d6bce8"];
 
   function cleanSubject(value) {
     const input = value && typeof value === "object" ? value : {};
@@ -115,10 +115,10 @@
       planetCount: Math.round(clamp(source.planetCount ?? DEFAULT_VISUAL.planetCount, 1, 16)),
       planetScale: clamp(source.planetScale ?? DEFAULT_VISUAL.planetScale, 0.55, 1.65),
       speed: clamp(source.speed ?? DEFAULT_VISUAL.speed, 0.2, 1.8),
-      orbitSpread: clamp(source.orbitSpread ?? DEFAULT_VISUAL.orbitSpread, 0.75, 1.9),
-      orbitRandomness: clamp(source.orbitRandomness ?? DEFAULT_VISUAL.orbitRandomness, 0, 1),
+      orbitSpread: clamp(source.orbitSpread ?? DEFAULT_VISUAL.orbitSpread, 0.75, 2.8),
+      orbitRandomness: clamp(source.orbitRandomness ?? DEFAULT_VISUAL.orbitRandomness, 0, 1.8),
       stars: Math.round(clamp(source.stars ?? DEFAULT_VISUAL.stars, 12, 64)),
-      microStarCount: Math.round(clamp(source.microStarCount ?? DEFAULT_VISUAL.microStarCount, 0, 6000)),
+      microStarCount: Math.round(clamp(source.microStarCount ?? DEFAULT_VISUAL.microStarCount, 0, 10000)),
       microStarScale: clamp(source.microStarScale ?? DEFAULT_VISUAL.microStarScale, 0.75, 2.25),
       microStarSpeed: clamp(source.microStarSpeed ?? DEFAULT_VISUAL.microStarSpeed, 0.25, 2.5),
       showOrbits: source.showOrbits !== false,
@@ -147,6 +147,8 @@
       const uniqueSubjects = subjects.filter((subject) => { if (seen.has(subject.id)) subject.id = makeId(); seen.add(subject.id); return true; });
       const tasks = raw.tasks.slice(0, 500).map((task) => cleanTask(task, uniqueSubjects)).filter((task) => task.title);
       const visual = cleanVisual(raw.visual);
+      if (raw.visual && Number(raw.visual.microStarCount) === 4200) visual.microStarCount = DEFAULT_VISUAL.microStarCount;
+      if (raw.visual && Number(raw.visual.microStarCount) === 6000) visual.microStarCount = 10000;
       if (raw.visual && raw.visual.microStarScale == null && Number(raw.visual.microStarCount) === 2200) visual.microStarCount = DEFAULT_VISUAL.microStarCount;
       if (raw.visual && Number(raw.visual.microStarCount) === 5200 && Number(raw.visual.microStarScale) === 1.25) {
         visual.microStarCount = DEFAULT_VISUAL.microStarCount;
@@ -326,7 +328,7 @@
   }
   function renderSettingsView() {
     const v = data.visual;
-    return `<section class="panel-section settings-section"><h3 class="section-title">Noyau central</h3><label class="view-row"><span>Couleur du noyau<small>La sphère centrale et son halo.</small></span><input data-visual="coreColor" type="color" value="${v.coreColor}"></label><label class="view-row"><span>Relief et cratères<small>Choisissez une surface de la lune géante.</small></span><select data-visual="coreCraters"><option value="none" ${v.coreCraters === "none" ? "selected" : ""}>Aucun</option><option value="few" ${v.coreCraters === "few" ? "selected" : ""}>Quelques cratères</option><option value="many" ${v.coreCraters === "many" ? "selected" : ""}>Beaucoup de cratères</option><option value="everest" ${v.coreCraters === "everest" ? "selected" : ""}>Mont Everest — grand relief</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>&Eacute;cart des orbites<small>&Eacute;loigne vos plan&egrave;tes du noyau.</small></span><input data-visual="orbitSpread" type="range" min="0.75" max="1.9" step="0.05" value="${v.orbitSpread}"><output data-output="orbitSpread">${v.orbitSpread.toFixed(2)}&times;</output></label><label class="view-row"><span>Dispersion al&eacute;atoire<small>Varie la distance, l&#39;inclinaison et le rythme de chaque orbite.</small></span><input data-visual="orbitRandomness" type="range" min="0" max="1" step="0.05" value="${v.orbitRandomness}"><output data-output="orbitRandomness">${Math.round(v.orbitRandomness * 100)}%</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label><label class="view-row"><span>Micro-constellations<small>Quantité d’étoiles animées visibles dans l’application et le widget.</small></span><input data-visual="microStarCount" type="range" min="0" max="6000" step="200" value="${v.microStarCount}"><output data-output="microStarCount">${v.microStarCount.toLocaleString("fr-CA")}</output></label><label class="view-row"><span>Taille des micro-étoiles</span><input data-visual="microStarScale" type="range" min="0.75" max="2.25" step="0.05" value="${v.microStarScale}"><output data-output="microStarScale">${v.microStarScale.toFixed(2)}×</output></label><label class="view-row"><span>Vitesse des micro-orbites</span><input data-visual="microStarSpeed" type="range" min="0.25" max="2.5" step="0.05" value="${v.microStarSpeed}"><output data-output="microStarSpeed">${v.microStarSpeed.toFixed(2)}×</output></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, elle se met à jour automatiquement.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
+    return `<section class="panel-section settings-section"><h3 class="section-title">Noyau central</h3><label class="view-row"><span>Couleur du noyau<small>La sphère centrale et son halo.</small></span><input data-visual="coreColor" type="color" value="${v.coreColor}"></label><label class="view-row"><span>Relief et cratères<small>Choisissez une surface de la lune géante.</small></span><select data-visual="coreCraters"><option value="none" ${v.coreCraters === "none" ? "selected" : ""}>Aucun</option><option value="few" ${v.coreCraters === "few" ? "selected" : ""}>Quelques cratères</option><option value="many" ${v.coreCraters === "many" ? "selected" : ""}>Beaucoup de cratères</option><option value="everest" ${v.coreCraters === "everest" ? "selected" : ""}>Mont Everest — grand relief</option></select></label></section><section class="panel-section settings-section"><h3 class="section-title">Mouvement et densité</h3><label class="view-row"><span>Planètes visibles<small>Combien peuvent tourner en même temps.</small></span><input data-visual="planetCount" type="range" min="1" max="16" step="1" value="${v.planetCount}"><output data-output="planetCount">${v.planetCount}</output></label><label class="view-row"><span>Taille générale<small>La taille de chaque planète s’ajoute à ce réglage.</small></span><input data-visual="planetScale" type="range" min="0.55" max="1.65" step="0.05" value="${v.planetScale}"><output data-output="planetScale">${Math.round(v.planetScale * 100)}%</output></label><label class="view-row"><span>Vitesse orbitale<small>Le mouvement continue en arrière-plan.</small></span><input data-visual="speed" type="range" min="0.2" max="1.8" step="0.05" value="${v.speed}"><output data-output="speed">${v.speed.toFixed(2)}×</output></label><label class="view-row"><span>&Eacute;cart des orbites<small>&Eacute;loigne vos plan&egrave;tes du noyau.</small></span><input data-visual="orbitSpread" type="range" min="0.75" max="2.8" step="0.05" value="${v.orbitSpread}"><output data-output="orbitSpread">${v.orbitSpread.toFixed(2)}&times;</output></label><label class="view-row"><span>Dispersion al&eacute;atoire<small>Varie davantage la distance, l&#39;orientation, la phase et le rythme.</small></span><input data-visual="orbitRandomness" type="range" min="0" max="1.8" step="0.05" value="${v.orbitRandomness}"><output data-output="orbitRandomness">${Math.round(v.orbitRandomness * 100)}%</output></label><label class="view-row"><span>Orbites magnétiques</span><input class="switch" data-visual="showOrbits" type="checkbox" ${v.showOrbits ? "checked" : ""}></label><label class="view-row"><span>Petites étoiles</span><select data-visual="stars"><option value="18" ${v.stars === 18 ? "selected" : ""}>Peu</option><option value="30" ${v.stars === 30 ? "selected" : ""}>Discrètes</option><option value="46" ${v.stars === 46 ? "selected" : ""}>Plus nombreuses</option><option value="64" ${v.stars === 64 ? "selected" : ""}>Denses</option></select></label><label class="view-row"><span>Micro-constellations<small>Quantité d’étoiles animées visibles dans l’application et le widget.</small></span><input data-visual="microStarCount" type="range" min="0" max="10000" step="250" value="${v.microStarCount}"><output data-output="microStarCount">${v.microStarCount.toLocaleString("fr-CA")}</output></label><label class="view-row"><span>Taille des micro-étoiles</span><input data-visual="microStarScale" type="range" min="0.75" max="2.25" step="0.05" value="${v.microStarScale}"><output data-output="microStarScale">${v.microStarScale.toFixed(2)}×</output></label><label class="view-row"><span>Vitesse des micro-orbites</span><input data-visual="microStarSpeed" type="range" min="0.25" max="2.5" step="0.05" value="${v.microStarSpeed}"><output data-output="microStarSpeed">${v.microStarSpeed.toFixed(2)}×</output></label></section><section class="panel-section settings-section"><h3 class="section-title">Position du noyau</h3><p class="subtle">Sur le bureau, maintenez le clic droit sur le noyau et faites-le glisser. Toute la carte suit avec lui.</p><button class="secondary-button full-button" data-action="center-reset">Recentrer la carte</button></section><section class="panel-section settings-section sync-settings"><h3 class="section-title">Widget Windows</h3><p class="subtle">Après vos changements, créez une copie. Si le widget est ouvert, elle se met à jour automatiquement.</p><button class="primary-button full-button" data-action="sync-widget">Créer la copie du widget</button></section>`;
   }
   function updateHeader() {
     const badge = byId("syncBadge");
@@ -560,7 +562,7 @@
 
   function createStars() {
     const baseCount = Math.round(clamp(data.visual.stars, 12, 64));
-    const total = baseCount * 50;
+    const total = baseCount * 92;
     starAnchor = { x: width * (coreCurrent.x + data.visual.zoomPan.x), y: height * (coreCurrent.y + data.visual.zoomPan.y) };
     starLayer = document.createElement("canvas");
     const starRatio = Math.min(ratio, 1);
@@ -571,32 +573,46 @@
     const span = Math.min(width, height);
     for (let index = 0; index < total; index++) {
       const angle = Math.random() * TAU;
-      const distance = Math.random() < 0.14 ? span * (0.12 + Math.random() * 0.72) : span * (0.025 + Math.pow(Math.random(), 1.8) * 0.64);
+      const distanceRoll = Math.random();
+      const distance = distanceRoll < 0.22
+        ? span * (0.48 + Math.random() * 0.76)
+        : distanceRoll < 0.58
+          ? span * (0.24 + Math.random() * 0.62)
+          : span * (0.035 + Math.pow(Math.random(), 1.65) * 0.68);
       const x = starAnchor.x + Math.cos(angle) * distance;
       const y = starAnchor.y + Math.sin(angle) * distance * (0.62 + Math.random() * 0.2);
-      const size = 0.28 + Math.random() * 0.62;
-      layerCtx.globalAlpha = 0.13 + Math.random() * 0.32;
+      const size = Math.random() < 0.025 ? 1.55 + Math.random() * 0.45 : 0.25 + Math.random() * 0.72;
+      layerCtx.globalAlpha = 0.09 + Math.random() * 0.28;
       layerCtx.fillStyle = "#f7fbff";
       layerCtx.beginPath(); layerCtx.arc(x, y, size, 0, TAU); layerCtx.fill();
     }
     layerCtx.globalAlpha = 1;
-    const movingCount = Math.min(150, Math.max(48, Math.round(baseCount * 2.2)));
+    const movingCount = Math.min(210, Math.max(48, Math.round(baseCount * 3.4)));
     stars = Array.from({ length: movingCount }, (_, index) => ({ orbit: span * (0.04 + Math.pow(Math.random(), 1.55) * 0.55), phase: Math.random() * TAU, size: 0.38 + Math.random() * 0.7, alpha: 0.12 + Math.random() * 0.25, speed: (0.000009 + Math.random() * 0.000015) * (index % 3 ? 1 : -1), squash: 0.62 + Math.random() * 0.2 }));
   }
 
   function createMicroStars() {
-    const count = Math.round(clamp(data.visual.microStarCount, 0, 6000));
+    const count = Math.round(clamp(data.visual.microStarCount, 0, 10000));
     const span = Math.max(1, Math.min(width, height));
     microStars = [];
     microStarClusters = [];
+    const bands = [0.075, 0.12, 0.18, 0.245, 0.32, 0.405, 0.5, 0.605];
     for (let index = 0; index < count; index += 12) {
       const clusterId = microStarClusters.length;
+      const bandRadius = bands[clusterId % bands.length];
+      const isStray = Math.random() < 0.28;
+      const radius = isStray
+        ? 0.055 + Math.pow(Math.random(), 0.82) * 0.68
+        : clamp(bandRadius + (Math.random() - 0.5) * 0.105, 0.045, 0.72);
+      const arm = clusterId % 5;
+      const followsArm = Math.random() < 0.68;
+      const spiralPhase = arm / 5 * TAU + radius * 2.2 + (Math.random() - 0.5) * (0.45 + radius * 1.2);
       const cluster = {
-        radius: span * (0.04 + Math.pow(Math.random(), 1.3) * 0.4),
-        phase: Math.random() * TAU,
-        inclination: 0.18 + Math.random() * 1.22,
+        radius: span * radius,
+        phase: followsArm ? spiralPhase : Math.random() * TAU,
+        inclination: 0.12 + Math.random() * 1.36,
         nodeAngle: Math.random() * TAU,
-        speed: (0.0000001 + Math.random() * 0.00000027) * (clusterId % 2 ? -1 : 1)
+        speed: (0.00000045 + Math.random() * 0.00000072) * (clusterId % 2 ? -1 : 1)
       };
       cluster.cosNode = Math.cos(cluster.nodeAngle);
       cluster.sinNode = Math.sin(cluster.nodeAngle);
@@ -608,9 +624,9 @@
         microStars.push({
           clusterId,
           member,
-          radiusOffset: (Math.random() - 0.5) * span * 0.022,
-          angleOffset: (Math.random() - 0.5) * 0.26,
-          size: 0.24 + Math.random() * 0.48,
+          radiusOffset: (Math.random() - 0.5) * span * (isStray ? 0.035 : 0.027),
+          angleOffset: (Math.random() - 0.5) * (isStray ? 0.42 : 0.33),
+          size: 0.28 + Math.random() * 0.58,
           phase: Math.random() * TAU,
           twinkleSpeed: 0.00028 + Math.random() * 0.00052,
           color: Math.floor(Math.random() * MICRO_STAR_COLORS.length)
@@ -719,9 +735,9 @@
     const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw);
     const cosPitch = Math.cos(pitch), sinPitch = Math.sin(pitch);
     const radius = Math.hypot(width, height) / 2 / 1.55;
-    const count = Math.min(SKY_SPHERE_STARS.length, Math.round(clamp(data.visual.stars, 12, 64) * 125));
+    const count = Math.min(SKY_SPHERE_STARS.length, Math.round(clamp(data.visual.stars, 12, 64) * 220));
     const focus = clamp((data.visual.zoom - 1.6) / 1.2, 0, 1);
-    const groups = Array.from({ length: 9 }, () => new Path2D());
+    const groups = Array.from({ length: SKY_STAR_COLORS.length * 3 }, () => new Path2D());
     for (let index = 0; index < count; index++) {
       const star = SKY_SPHERE_STARS[index];
       const x1 = star.x * cosYaw + star.z * sinYaw;
@@ -740,7 +756,7 @@
     }
     ctx.save();
     for (let index = 0; index < groups.length; index++) {
-      ctx.globalAlpha = [0.24, 0.46, 0.76][index % 3] * (1 - focus * 0.88);
+      ctx.globalAlpha = [0.16, 0.31, 0.53][index % 3] * (1 - focus * 0.88);
       ctx.fillStyle = SKY_STAR_COLORS[Math.floor(index / 3)];
       ctx.fill(groups[index]);
     }
@@ -793,12 +809,14 @@
 
   function drawDistantOrbitals(core, timestamp) {
     const span = Math.min(width, height);
-    const colors = ["#a8baff", "#90f4e6", "#f0a7e7"];
-    for (let index = 0; index < 3; index++) {
-      const radius = span * (0.43 + index * 0.13) * data.visual.zoom;
-      const inclination = [0.82, 1.12, 0.48][index];
+    const colors = ["#a8baff", "#90e8f4", "#f0a7e7", "#d8c4ff", "#f4dfb1"];
+    const radii = [0.41, 0.52, 0.64, 0.77, 0.9];
+    const inclinations = [0.82, 1.12, 0.48, 0.94, 1.28];
+    for (let index = 0; index < radii.length; index++) {
+      const radius = span * radii[index] * data.visual.zoom;
+      const inclination = inclinations[index];
       const nodeAngle = index * 1.17 - 0.34;
-      drawProjectedOrbit(core, radius, inclination, nodeAngle, colors[index], 0.052 - index * 0.008, timestamp);
+      drawProjectedOrbit(core, radius, inclination, nodeAngle, colors[index], 0.062 - index * 0.007, timestamp);
       const angle = timestamp * (index % 2 ? -0.000038 : 0.000031) + index * 2.13;
       const mote = orbitPoint(core, angle, radius, inclination, nodeAngle, timestamp);
       const size = (1.05 + index * 0.18) * mote.scale;
@@ -808,6 +826,55 @@
       ctx.globalAlpha = 0.22 - index * 0.04; ctx.fillStyle = colors[index];
       ctx.beginPath(); ctx.arc(mote.x, mote.y, size, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
     }
+  }
+
+  function drawOrbitalReticles(core, timestamp) {
+    const span = Math.min(width, height);
+    const spread = 0.92 + data.visual.orbitSpread * 0.105;
+    const shells = [
+      { factor: 1.52, inclination: 0.38, node: -0.42, color: "#b9c9ff" },
+      { factor: 2.24, inclination: 0.72, node: 0.36, color: "#57e4ff" },
+      { factor: 3.12, inclination: 1.02, node: 1.08, color: "#d58aff" },
+      { factor: 4.18, inclination: 0.52, node: 1.82, color: "#77cfff" },
+      { factor: 5.35, inclination: 1.24, node: 2.44, color: "#e8d5aa" }
+    ];
+    ctx.save();
+    ctx.lineCap = "square";
+    for (let shellIndex = 0; shellIndex < shells.length; shellIndex++) {
+      const shell = shells[shellIndex];
+      const radius = Math.min(span * 0.73 * data.visual.zoom, core.radius * shell.factor * spread + 24 + shellIndex * 5);
+      const tickCount = 8 + shellIndex * 2;
+      const majorTicks = new Path2D();
+      const minorTicks = new Path2D();
+      const angularDrift = timestamp * (shellIndex % 2 ? -0.000004 : 0.000003) + shellIndex * 0.11;
+      for (let tick = 0; tick < tickCount; tick++) {
+        const major = tick % 4 === 0;
+        const angle = tick / tickCount * TAU + angularDrift;
+        const halfArc = major ? 0.021 : 0.010;
+        const from = orbitPoint(core, angle - halfArc, radius, shell.inclination, shell.node, timestamp);
+        const to = orbitPoint(core, angle + halfArc, radius, shell.inclination, shell.node, timestamp);
+        const path = major ? majorTicks : minorTicks;
+        path.moveTo(from.x, from.y);
+        path.lineTo(to.x, to.y);
+        if (major) {
+          const secondaryOffset = 0.029;
+          for (const side of [-1, 1]) {
+            const secondaryFrom = orbitPoint(core, angle + side * secondaryOffset - 0.006, radius, shell.inclination, shell.node, timestamp);
+            const secondaryTo = orbitPoint(core, angle + side * secondaryOffset + 0.006, radius, shell.inclination, shell.node, timestamp);
+            majorTicks.moveTo(secondaryFrom.x, secondaryFrom.y);
+            majorTicks.lineTo(secondaryTo.x, secondaryTo.y);
+          }
+        }
+      }
+      ctx.strokeStyle = shell.color;
+      ctx.lineWidth = 0.75;
+      ctx.globalAlpha = 0.12 - shellIndex * 0.014;
+      ctx.stroke(minorTicks);
+      ctx.lineWidth = 1.05;
+      ctx.globalAlpha = 0.22 - shellIndex * 0.022;
+      ctx.stroke(majorTicks);
+    }
+    ctx.restore();
   }
 
   function coreEdgeRadius(angle, radius, timestamp) {
@@ -1052,15 +1119,15 @@
     const randomness = data.visual.orbitRandomness;
     const zoom = data.visual.zoom;
     const orbitIndex = index + 1;
-    const radialVariation = 1 + (seed("radius") - 0.5) * 0.7 * randomness;
-    const outer = Math.min(Math.min(width, height) * 0.48 * zoom, core.radius + (84 + (orbitIndex % 4) * 34) * data.visual.orbitSpread * radialVariation * zoom);
+    const radialVariation = clamp(1 + (seed("radius") - 0.5) * 1.35 * randomness, 0.42, 1.78);
+    const outer = Math.min(Math.min(width, height) * 0.62 * zoom, core.radius + (102 + (orbitIndex % 4) * 46) * data.visual.orbitSpread * radialVariation * zoom);
     const orbit = core.radius + 22 * zoom + Math.max(0, outer - core.radius - 22 * zoom) * (1 - Math.pow(progress, 1.38));
     const direction = index % 2 ? -1 : 1;
-    const speedVariation = 1 + (seed("speed") - 0.5) * 0.32 * randomness;
+    const speedVariation = clamp(1 + (seed("speed") - 0.5) * 0.52 * randomness, 0.52, 1.48);
     const speed = .00013 * data.visual.speed * (motionPreference === "reduced" ? 0.45 : 1) * (1 + index * .055) * speedVariation * direction;
-    const angle = index * 2.399963 + (task.startedAt || task.createdAt) * .000002 + (seed("phase") - 0.5) * 2.4 * randomness + timestamp * speed;
-    const inclination = [0.38, 0.68, 0.94, 1.18, 0.52, 1.36][index % 6] + (seed("inclination") - 0.5) * 0.62 * randomness;
-    const nodeAngle = index * 1.73 + (seed("node") - 0.5) * 1.5 * randomness + 0.26 * Math.sin(timestamp * .000018 + index);
+    const angle = index * 2.399963 + (task.startedAt || task.createdAt) * .000002 + (seed("phase") - 0.5) * 3.5 * randomness + timestamp * speed;
+    const inclination = clamp([0.38, 0.68, 0.94, 1.18, 0.52, 1.36][index % 6] + (seed("inclination") - 0.5) * 1.05 * randomness, 0.12, 1.5);
+    const nodeAngle = index * 1.73 + (seed("node") - 0.5) * 2.25 * randomness + 0.26 * Math.sin(timestamp * .000018 + index);
     return { outer, orbit, angle, inclination, nodeAngle };
   }
 
@@ -1345,8 +1412,16 @@
     if (active.length) urgency = Math.max(...active.map((task) => taskProgress(task, wallTime)));
     drawDistantOrbitals(core, timestamp);
     if (data.visual.showOrbits) {
-      const orbitScale = 0.9 + data.visual.orbitSpread * 0.16;
-      [1.42, 1.92, 2.5].forEach((factor, index) => drawProjectedOrbit(core, core.radius * factor * orbitScale + 34, .48 + index * .21, -.17 + index * .72, index % 2 ? "#8b79ff" : "#42dcff", .11, timestamp));
+      const orbitScale = 0.92 + data.visual.orbitSpread * 0.105;
+      const shells = [
+        { factor: 1.48, inclination: 0.38, node: -0.42, color: "#b9c9ff", alpha: 0.15 },
+        { factor: 2.22, inclination: 0.72, node: 0.36, color: "#42dcff", alpha: 0.125 },
+        { factor: 3.1, inclination: 1.02, node: 1.08, color: "#ad7bff", alpha: 0.105 },
+        { factor: 4.16, inclination: 0.52, node: 1.82, color: "#ff4fc8", alpha: 0.085 },
+        { factor: 5.32, inclination: 1.24, node: 2.44, color: "#ffc94a", alpha: 0.068 }
+      ];
+      shells.forEach((shell) => drawProjectedOrbit(core, core.radius * shell.factor * orbitScale + 24, shell.inclination, shell.node, shell.color, shell.alpha, timestamp, false));
+      drawOrbitalReticles(core, timestamp);
     }
     const ordered = active.map((task, index) => ({ task, index, phase: taskPhase(task, wallTime), progress: taskPhase(task, wallTime) === "running" ? taskProgress(task, wallTime) : 0 }))
       .sort((a, b) => Number(b.phase === "elapsed") - Number(a.phase === "elapsed") || (a.progress - b.progress));

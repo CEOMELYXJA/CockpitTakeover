@@ -1,3 +1,9 @@
+# Cockpit Takeover Widget 0.11.14
+
+- Sépare davantage les couches orbitales et ajoute de petits repères de visée à plusieurs niveaux.
+- Ouvre les orbites des planètes et augmente fortement les variations de distance, d’orientation et de phase.
+- Densifie le champ d’étoiles lointain et les micro-constellations en arcs irréguliers animés; leur quantité reste réglable.
+
 # Cockpit Takeover Widget 0.11.13
 
 - Ajoute un numéro de version au script de la page pour obliger Chrome à récupérer le moteur réparé au lieu d’une copie en cache.
