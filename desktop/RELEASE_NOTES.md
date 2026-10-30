@@ -1,3 +1,7 @@
+# Cockpit Takeover Widget 0.11.13
+
+- Ajoute un numéro de version au script de la page pour obliger Chrome à récupérer le moteur réparé au lieu d’une copie en cache.
+
 # Cockpit Takeover Widget 0.11.12
 
 - Corrige l’erreur d’affichage qui arrêtait le dessin du noyau et des planètes dès qu’un rappel était présent. Les données enregistrées restent intactes.
